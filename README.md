@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![BitSeal Integrity Protocol](https://bit-seal.vercel.app/opengraph-image.png)
+<img src="logo.svg" width="120" alt="BitSeal Logo" />
 
 ### The Digital Integrity Standard
 
