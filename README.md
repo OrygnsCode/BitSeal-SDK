@@ -6,6 +6,8 @@
 
 ### The Digital Integrity Standard
 
+**Official Website:** [https://bit-seal.vercel.app/](https://bit-seal.vercel.app/)
+
 [![Website](https://img.shields.io/badge/Website-bit--seal.vercel.app-22d3ee?style=for-the-badge)](https://bit-seal.vercel.app/)
 [![License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=for-the-badge)](https://www.python.org/)

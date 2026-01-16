@@ -3,7 +3,8 @@ import argparse
 from BitSealCore import BitSealLedger
 
 def main():
-    parser = argparse.ArgumentParser(description="BitSeal Verification Tool")
+    print("BitSeal Verification Tool - https://bit-seal.vercel.app/")
+    parser = argparse.ArgumentParser(description="BitSeal Verification Tool (https://bit-seal.vercel.app/)")
     parser.add_argument("--root", required=True, help="Root Hash to verify")
     args = parser.parse_args()
 
