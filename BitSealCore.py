@@ -4,11 +4,13 @@ import hashlib
 import json
 import mmap
 import os
+import struct
 import sys
 import time
 import site
 import traceback
 import platform
+import urllib.request
 import uuid
 
 # Force add user site-packages
@@ -66,10 +68,15 @@ except ImportError:
     Image = None
 
 # --- Configuration Constants ---
-CHUNK_SIZE = 64 * 1024       # 64KB Forensic Blocks
-BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer
+CHUNK_SIZE = 64 * 1024       # 64KB Merkle leaves (unified spec v1)
+BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 KEYS_DIR = "bitseal_keys"
 KEY_NAME = "bitseal"
+
+# Canonical name of the manifest format shared with the web sealer.
+# See https://bitseal.orygn.tech/.well-known/bitseal-authority-key.json
+# for the full spec published under the "manifest_spec" field.
+SEAL_MODE = "merkle-blake3-64k-v1"
 
 @dataclass
 class SealManifest:
@@ -87,6 +94,8 @@ class SealManifest:
     merkle_tree: List[str]
     machine_fingerprint: str
     high_entropy_zones: List[int]
+    seal_mode: str = SEAL_MODE
+    chunk_size_bytes: int = CHUNK_SIZE
     context: str = "https://w3id.org/security/v1"
     type: str = "BitSealManifest"
     signer: str = "Orygn LLC"
@@ -170,12 +179,111 @@ class AuthorityManager:
     def sign_seal(self, root_hash: str, timestamp: float) -> str:
         fingerprint = self.get_machine_fingerprint()
         payload = f"{root_hash}|{fingerprint}|{timestamp}".encode()
-        
+
         with open(self.private_key_path, "rb") as f:
             priv_key = serialization.load_pem_private_key(f.read(), password=None)
-            
+
         signature = priv_key.sign(payload)
         return signature.hex()
+
+
+# --- Offline Signature Verification ---
+
+WEB_AUTHORITY_KEY_URL = "https://bitseal.orygn.tech/.well-known/bitseal-authority-key.json"
+
+
+def _build_web_signed_message(root_hash_hex: str, timestamp: float) -> bytes:
+    """Reconstructs the 40-byte message the web Authority signs: 32-byte root hash
+    plus 8-byte little-endian double timestamp. Must match web/lib/signing.js."""
+    root_bytes = bytes.fromhex(root_hash_hex)
+    if len(root_bytes) != 32:
+        raise ValueError("root_hash must decode to 32 bytes")
+    return root_bytes + struct.pack("<d", float(timestamp))
+
+
+def _build_cli_signed_message(root_hash_hex: str, fingerprint: str, timestamp: float) -> bytes:
+    """Reconstructs what AuthorityManager.sign_seal signs for local CLI seals."""
+    return f"{root_hash_hex}|{fingerprint}|{timestamp}".encode()
+
+
+def _is_web_signed_manifest(manifest: Dict[str, Any]) -> bool:
+    signer = manifest.get("signer", "") or ""
+    return "Cloud Authority" in signer or "Vercel" in signer
+
+
+def fetch_web_authority_public_key(url: str = WEB_AUTHORITY_KEY_URL, timeout: float = 10.0) -> Dict[str, Any]:
+    """Fetches the published Authority public key document over HTTPS."""
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
+    """Verifies a seal manifest's Ed25519 signature fully offline.
+
+    For web-signed manifests (signer contains "Cloud Authority" or "Vercel"),
+    supply the web Authority public key PEM (or let this function fetch the
+    published key if omitted).
+
+    For CLI-signed manifests, supply the signer's published public key PEM.
+    The CLI's per-machine key is not published by BitSeal, so the caller must
+    obtain it out-of-band.
+
+    Returns {"ok": bool, "reason": str, "format": "web"|"cli"}.
+    """
+    root_hash = manifest.get("root_hash")
+    timestamp = manifest.get("timestamp_utc")
+    signature_hex = manifest.get("signature")
+
+    if not root_hash or timestamp is None or not signature_hex:
+        return {"ok": False, "reason": "manifest is missing required fields", "format": None}
+
+    try:
+        signature = bytes.fromhex(signature_hex)
+    except ValueError:
+        return {"ok": False, "reason": "signature is not hex", "format": None}
+    if len(signature) != 64:
+        return {"ok": False, "reason": "Ed25519 signatures must be 64 bytes", "format": None}
+
+    is_web = _is_web_signed_manifest(manifest)
+    fmt = "web" if is_web else "cli"
+
+    if is_web:
+        try:
+            message = _build_web_signed_message(root_hash, timestamp)
+        except ValueError as e:
+            return {"ok": False, "reason": str(e), "format": fmt}
+        if public_key_pem is None:
+            try:
+                doc = fetch_web_authority_public_key()
+                public_key_pem = doc.get("current_key", {}).get("public_key_pem")
+            except Exception as e:
+                return {"ok": False, "reason": f"could not fetch Authority public key: {e}", "format": fmt}
+    else:
+        fingerprint = manifest.get("machine_fingerprint", "")
+        message = _build_cli_signed_message(root_hash, fingerprint, timestamp)
+        if public_key_pem is None:
+            return {
+                "ok": False,
+                "reason": "CLI-signed manifest requires the signer's published public key PEM; no default is fetched.",
+                "format": fmt,
+            }
+
+    if isinstance(public_key_pem, str):
+        public_key_pem = public_key_pem.encode("utf-8")
+
+    try:
+        pub_key = serialization.load_pem_public_key(public_key_pem)
+    except Exception as e:
+        return {"ok": False, "reason": f"invalid public key PEM: {e}", "format": fmt}
+
+    if not isinstance(pub_key, ed25519.Ed25519PublicKey):
+        return {"ok": False, "reason": "public key is not Ed25519", "format": fmt}
+
+    try:
+        pub_key.verify(signature, message)
+        return {"ok": True, "reason": "signature verified", "format": fmt}
+    except Exception:
+        return {"ok": False, "reason": "signature did not verify", "format": fmt}
 
 # --- Forensic Engine ---
 class MerkleTree:
@@ -295,6 +403,39 @@ class BitSealLedger:
             # Catch-all for any other initialization errors
             self.offline_mode = True
             print(f"[yellow]>> Ledger Init Failed ({e}). Running in OFFLINE QUEUE MODE.[/yellow]")
+
+    def verify_seal(self, root_hash: str, public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
+        if not root_hash or len(root_hash) != 64 or not all(c in "0123456789abcdefABCDEF" for c in root_hash):
+            return {"valid": False, "error": "Invalid root hash format (expected 64-char hex)."}
+
+        if self.offline_mode or self.db is None:
+            return {"valid": False, "error": "Ledger unreachable (offline mode). Cannot query registry."}
+
+        try:
+            docs = list(self.db.collection("seals").where("root_hash", "==", root_hash).limit(1).stream())
+            if not docs:
+                return {"valid": False, "error": "Seal not found in registry."}
+
+            data = docs[0].to_dict()
+
+            # Ledger presence alone is not proof. Re-verify the Ed25519 signature
+            # against the published Authority key (web seals) or caller-supplied
+            # key (CLI seals).
+            sig_result = verify_manifest_signature(data, public_key_pem=public_key_pem)
+
+            return {
+                "valid": True,
+                "ledger_present": True,
+                "signature_verified": sig_result["ok"],
+                "signature_format": sig_result.get("format"),
+                "signature_note": None if sig_result["ok"] else sig_result["reason"],
+                "timestamp_utc": data.get("timestamp_utc"),
+                "signature": data.get("signature"),
+                "filename": data.get("filename"),
+                "signer": data.get("signer"),
+            }
+        except Exception as e:
+            return {"valid": False, "error": f"Ledger query failed: {e}"}
 
     def register_seal(self, seal: SealManifest) -> str:
         if self.offline_mode:
