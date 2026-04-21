@@ -2,6 +2,7 @@ blake3
 cryptography
 filetype
 numpy
+opentimestamps
 pillow
 requests
 rich

@@ -1,7 +1,7 @@
 import sys
 import argparse
 import json
-from BitSealCore import BitSealLedger, verify_manifest_signature
+from BitSealCore import BitSealLedger, verify_manifest_signature, verify_bitcoin_anchor
 
 def main():
     print("BitSeal Verification Tool - https://bitseal.orygn.tech/")
@@ -9,6 +9,12 @@ def main():
     parser.add_argument("--root", help="Root Hash to verify against the ledger")
     parser.add_argument("--manifest", help="Path to a seal manifest JSON file for fully-offline verification")
     parser.add_argument("--public-key", help="Path to Ed25519 public key PEM (required for --manifest with CLI signer; optional for web signer)")
+    parser.add_argument(
+        "--ots",
+        action="store_true",
+        help="Independently verify the OpenTimestamps Bitcoin anchor against mempool.space "
+             "(requires --root and `pip install opentimestamps`)",
+    )
     args = parser.parse_args()
 
     if args.manifest:
@@ -65,6 +71,62 @@ def main():
         if note:
             print(f"    Note: {note}")
         sys.exit(1)
+
+    # --ots: independent Bitcoin anchor verification.
+    # This is additive to the signature check above. A verified signature
+    # proves the BitSeal Authority sealed this root hash; a verified
+    # Bitcoin anchor proves a sha256 of that signature existed in a
+    # specific Bitcoin block, giving a trust-minimized external witness.
+    if args.ots:
+        ots = result.get("ots") or {}
+        status = ots.get("status")
+
+        print("\n[*] Verifying Bitcoin anchor (OpenTimestamps)...")
+
+        if status == "none":
+            print("[!] BITCOIN ANCHOR NOT APPLICABLE")
+            print("    This seal predates OpenTimestamps support or the public calendars")
+            print("    were unreachable at seal time. No independent Bitcoin witness is")
+            print("    available for this seal.")
+            return
+
+        if status == "pending":
+            print("[!] BITCOIN ANCHOR PENDING")
+            print("    Public calendars have accepted the commitment but a Bitcoin block")
+            print("    has not yet confirmed it. Typical latency is 1-6 hours after sealing.")
+            cals = ots.get("calendars") or []
+            if cals:
+                print(f"    Calendars: {len(cals)} accepted")
+                for c in cals:
+                    print(f"      - {c}")
+            submitted = ots.get("submitted_at")
+            if submitted:
+                print(f"    Submitted: {submitted}")
+            print("    Re-run with --ots later to pick up the anchor.")
+            return
+
+        if status != "upgraded":
+            print(f"[-] UNEXPECTED OTS STATUS: {status!r}")
+            sys.exit(1)
+
+        anchor = verify_bitcoin_anchor(ots)
+        if anchor.get("ok"):
+            print("[+] BITCOIN ANCHOR VERIFIED")
+            print(f"    Block height: #{anchor['block_height']}")
+            print(f"    Block time:   {anchor['block_time']}")
+            print(f"    Block hash:   {anchor['block_hash']}")
+            print(f"    Mempool.space: {anchor['mempool_url']}")
+            src = anchor.get("source")
+            if src:
+                print(f"    Source:       {src}")
+        else:
+            print("[-] BITCOIN ANCHOR VERIFICATION FAILED")
+            print(f"    Reason: {anchor.get('reason')}")
+            if anchor.get("block_height"):
+                print(f"    Block height claimed: #{anchor['block_height']}")
+            if anchor.get("block_hash"):
+                print(f"    Block hash:           {anchor['block_hash']}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

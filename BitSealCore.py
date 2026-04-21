@@ -2,13 +2,11 @@
 import asyncio
 import base64
 import hashlib
-import json
 import os
 import struct
 import sys
 import site
 import platform
-import urllib.request
 
 # Force add user site-packages
 try:
@@ -65,8 +63,19 @@ try:
 except ImportError:
     Image = None
 
+# OpenTimestamps (Part 7c) is optional — only required when the user passes
+# --ots to verify.py. Keeping it optional lets existing verify flows keep
+# working on systems that never installed it.
+try:
+    from opentimestamps.core.timestamp import Timestamp
+    from opentimestamps.core.serialize import BytesDeserializationContext
+    from opentimestamps.core.notary import BitcoinBlockHeaderAttestation
+    _HAS_OPENTIMESTAMPS = True
+except ImportError:
+    _HAS_OPENTIMESTAMPS = False
+
 # --- Configuration Constants ---
-SDK_VERSION = "0.2.0"
+SDK_VERSION = "0.3.0"
 CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 
@@ -135,9 +144,23 @@ def _is_web_signed_manifest(manifest: Dict[str, Any]) -> bool:
 
 
 def fetch_web_authority_public_key(url: str = WEB_AUTHORITY_KEY_URL, timeout: float = 10.0) -> Dict[str, Any]:
-    """Fetches the published Authority public key document over HTTPS."""
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    """Fetches the published Authority public key document over HTTPS.
+
+    Uses `requests` with the SDK's X-API-Client header so Cloudflare's
+    edge rules don't 403 us like they would a bare urllib.request call
+    (default Python User-Agent is on Cloudflare's managed challenge list).
+    """
+    resp = requests.get(
+        url,
+        headers={
+            "User-Agent": API_CLIENT_TAG,
+            "X-API-Client": API_CLIENT_TAG,
+            "Accept": "application/json",
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
@@ -206,6 +229,166 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
         return {"ok": True, "reason": "signature verified", "format": fmt}
     except Exception:
         return {"ok": False, "reason": "signature did not verify", "format": fmt}
+
+
+# --- OpenTimestamps / Bitcoin Anchor Verification (Part 7c) ---
+
+# mempool.space is the primary block explorer, blockstream.info is the
+# fallback (matches the web server's 7b block-time lookup strategy).
+MEMPOOL_SPACE_API = "https://mempool.space/api"
+BLOCKSTREAM_API = "https://blockstream.info/api"
+
+
+def _fetch_bitcoin_block_header(height: int, timeout: float = 10.0) -> Dict[str, Any]:
+    """Fetch a block's hash + merkle root + timestamp, tries mempool.space
+    first and falls back to blockstream.info. Returns
+    {"ok": bool, "reason": str, "block_hash": str, "merkle_root": str, "block_time": int}.
+
+    Both providers return the merkle root as big-endian display hex. Both
+    return `timestamp` as Unix seconds. `block_hash` is the standard
+    big-endian hash used in explorer URLs.
+    """
+    for base in (MEMPOOL_SPACE_API, BLOCKSTREAM_API):
+        try:
+            r1 = requests.get(f"{base}/block-height/{height}", timeout=timeout)
+            if r1.status_code != 200:
+                continue
+            block_hash = r1.text.strip()
+            if not block_hash or len(block_hash) != 64:
+                continue
+            r2 = requests.get(f"{base}/block/{block_hash}", timeout=timeout)
+            if r2.status_code != 200:
+                continue
+            data = r2.json()
+            merkle_root = data.get("merkle_root")
+            block_time = data.get("timestamp")
+            if merkle_root and block_time:
+                return {
+                    "ok": True,
+                    "block_hash": block_hash,
+                    "merkle_root": merkle_root,
+                    "block_time": int(block_time),
+                    "source": base,
+                }
+        except Exception:
+            continue
+    return {"ok": False, "reason": f"could not fetch block #{height} from mempool.space or blockstream.info"}
+
+
+def verify_bitcoin_anchor(ots_payload: Dict[str, Any], timeout: float = 10.0) -> Dict[str, Any]:
+    """Independently verify a BitSeal OTS proof against the Bitcoin blockchain.
+
+    Parses the `upgraded_proof_base64` bytes with the `opentimestamps`
+    library, walks to the BitcoinBlockHeaderAttestation, fetches the
+    corresponding block header from mempool.space (blockstream.info
+    fallback), and confirms that the merkle root the attestation commits
+    to matches the one in the real block header.
+
+    The server-side cron already stored a block height after finding the
+    attestation, but we deliberately do NOT trust that height here: we
+    re-walk the proof ourselves and re-query Bitcoin, so the answer is a
+    genuine independent attestation that the seal's digest existed by the
+    time of the named Bitcoin block.
+
+    Returns:
+        {"ok": bool, "reason": str, "block_height": int|None,
+         "block_time": str|None, "block_hash": str|None,
+         "mempool_url": str|None, "digest": str|None}
+    """
+    if not _HAS_OPENTIMESTAMPS:
+        return {
+            "ok": False,
+            "reason": "opentimestamps library not installed. Run: pip install opentimestamps",
+        }
+
+    if not ots_payload:
+        return {"ok": False, "reason": "verify response did not include an ots block"}
+
+    status = ots_payload.get("status")
+    if status != "upgraded":
+        return {
+            "ok": False,
+            "reason": f"OTS status is '{status}'; no Bitcoin anchor to verify yet",
+            "status": status,
+        }
+
+    proof_b64 = ots_payload.get("upgraded_proof_base64")
+    digest_hex = ots_payload.get("digest")
+    if not proof_b64 or not digest_hex:
+        return {
+            "ok": False,
+            "reason": "server reported status=upgraded but the response is missing upgraded_proof_base64 or digest",
+        }
+
+    try:
+        proof_bytes = base64.b64decode(proof_b64)
+    except Exception as e:
+        return {"ok": False, "reason": f"upgraded_proof_base64 is not valid base64: {e}"}
+    try:
+        digest = bytes.fromhex(digest_hex)
+    except Exception as e:
+        return {"ok": False, "reason": f"digest is not valid hex: {e}"}
+    if len(digest) != 32:
+        return {"ok": False, "reason": f"digest must be 32 bytes (sha256); got {len(digest)}"}
+
+    try:
+        ctx = BytesDeserializationContext(proof_bytes)
+        timestamp = Timestamp.deserialize(ctx, digest)
+    except Exception as e:
+        return {"ok": False, "reason": f"opentimestamps could not parse proof bytes: {e}"}
+
+    btc_msg = None
+    btc_height = None
+    for msg, attestation in timestamp.all_attestations():
+        if isinstance(attestation, BitcoinBlockHeaderAttestation):
+            btc_msg = msg
+            btc_height = int(attestation.height)
+            break
+
+    if btc_msg is None or btc_height is None:
+        return {
+            "ok": False,
+            "reason": "proof parsed but contains no BitcoinBlockHeaderAttestation (calendar has not yet been Bitcoin-anchored)",
+        }
+
+    header = _fetch_bitcoin_block_header(btc_height, timeout=timeout)
+    if not header.get("ok"):
+        return {
+            "ok": False,
+            "reason": header.get("reason", "block header fetch failed"),
+            "block_height": btc_height,
+        }
+
+    # Attestations commit to the merkle root in internal byte order (LE).
+    # Explorers return the display hex (BE), so we reverse before comparing.
+    claimed_root_display_hex = btc_msg[::-1].hex()
+    real_root_display_hex = header["merkle_root"]
+
+    if claimed_root_display_hex != real_root_display_hex:
+        return {
+            "ok": False,
+            "reason": (
+                f"merkle root mismatch at block #{btc_height}: "
+                f"proof commits to {claimed_root_display_hex}, "
+                f"block header has {real_root_display_hex}"
+            ),
+            "block_height": btc_height,
+            "block_hash": header["block_hash"],
+        }
+
+    from datetime import datetime, timezone
+    block_time_iso = datetime.fromtimestamp(header["block_time"], tz=timezone.utc).isoformat()
+
+    return {
+        "ok": True,
+        "reason": "Bitcoin anchor independently verified",
+        "block_height": btc_height,
+        "block_time": block_time_iso,
+        "block_hash": header["block_hash"],
+        "mempool_url": f"https://mempool.space/block/{header['block_hash']}",
+        "digest": digest_hex,
+        "source": header.get("source"),
+    }
 
 
 # --- Forensic Engine ---
@@ -369,6 +552,10 @@ class BitSealLedger:
             "signer": manifest.get("signer"),
             "tree_consistent": payload.get("tree_consistent"),
             "tree_note": payload.get("tree_note"),
+            # Part 7c: pass the server's OTS block through unchanged so
+            # callers (verify.py --ots) can independently re-verify the
+            # Bitcoin anchor. None when the seal predates 7a.
+            "ots": payload.get("ots"),
         }
 
     def submit_seal(self, manifest: SealManifest) -> Dict[str, Any]:
