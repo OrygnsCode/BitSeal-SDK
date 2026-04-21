@@ -1,8 +1,7 @@
 blake3
-ed25519
-firebase-admin
-google-cloud-firestore
-qrcode
+cryptography
+filetype
+numpy
+pillow
 requests
-tlsh
-reportlab
+rich

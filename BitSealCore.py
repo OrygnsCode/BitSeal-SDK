@@ -1,17 +1,14 @@
 
 import asyncio
+import base64
 import hashlib
 import json
-import mmap
 import os
 import struct
 import sys
-import time
 import site
-import traceback
 import platform
 import urllib.request
-import uuid
 
 # Force add user site-packages
 try:
@@ -34,17 +31,24 @@ except ImportError as e:
     print(f"CRITICAL: UI/Math libraries missing ({e}). Run pip install rich numpy")
     sys.exit(1)
 
-# 2. Crypto & Reporting
+# 2. Crypto (offline verification only — all signing happens server-side).
 try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
-    import ReportGenerator
 except ImportError as e:
-    print(f"System Libraries missing: {e}. Run pip install cryptography reportlab")
+    print(f"System Libraries missing: {e}. Run pip install cryptography")
+    sys.exit(1)
+
+# 3. HTTP client for the BitSeal web API.
+try:
+    import requests
+except ImportError as e:
+    print(f"Network library missing: {e}. Run pip install requests")
+    sys.exit(1)
 
 console = Console()
 
-# 3. Forensic Libs (Individually guarded)
+# 4. Forensic Libs (individually guarded).
 try:
     import blake3
 except ImportError:
@@ -56,141 +60,55 @@ except ImportError:
     filetype = None
 
 try:
-    import firebase_admin
-    from firebase_admin import credentials, firestore
-except ImportError:
-    firebase_admin = None
-
-try:
     from PIL import Image
     from PIL.ExifTags import TAGS
 except ImportError:
     Image = None
 
 # --- Configuration Constants ---
-CHUNK_SIZE = 64 * 1024       # 64KB Merkle leaves (unified spec v1)
+SDK_VERSION = "0.2.0"
+CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
-KEYS_DIR = "bitseal_keys"
-KEY_NAME = "bitseal"
 
 # Canonical name of the manifest format shared with the web sealer.
 # See https://bitseal.orygn.tech/.well-known/bitseal-authority-key.json
 # for the full spec published under the "manifest_spec" field.
 SEAL_MODE = "merkle-blake3-64k-v1"
 
+# Web API base URL. Override with BITSEAL_API_URL for staging or local dev.
+DEFAULT_API_BASE = "https://bitseal.orygn.tech"
+API_BASE = (os.environ.get("BITSEAL_API_URL") or DEFAULT_API_BASE).rstrip("/")
+
+# Value sent in X-API-Client. The server uses presence-of-header to bypass the
+# Turnstile widget check; rate limits apply identically to web and SDK traffic.
+API_CLIENT_TAG = f"BitSeal-SDK/{SDK_VERSION} python/{platform.python_version()}"
+
+HTTP_TIMEOUT = 60  # seconds; 50MB payloads are well under this on typical links
+
+# 50MB upload cap must match the server-side guard in web/app/api/seal/route.js.
+MAX_FILE_SIZE = 50 * 1024 * 1024
+
+# Authority key document (for offline manifest verification).
+WEB_AUTHORITY_KEY_URL = f"{DEFAULT_API_BASE}/.well-known/bitseal-authority-key.json"
+
+
 @dataclass
 class SealManifest:
-    """JSON-LD Compliant Seal Manifest."""
+    """The subset of fields the web sealer accepts as a request body. The server
+    attaches timestamp, signature, and signer itself."""
     filename: str
     size_bytes: int
-    timestamp_utc: float
     root_hash: str
     blake3_hash: str
     sha3_512_hash: str
-    fuzzy_hash: str
     entropy: float
     mime_type: str
-    metadata: Dict[str, Any]
     merkle_tree: List[str]
-    machine_fingerprint: str
-    high_entropy_zones: List[int]
-    seal_mode: str = SEAL_MODE
     chunk_size_bytes: int = CHUNK_SIZE
-    context: str = "https://w3id.org/security/v1"
-    type: str = "BitSealManifest"
-    signer: str = "Orygn LLC"
-    signature: str = ""
-
-    def to_json_ld(self) -> Dict[str, Any]:
-        data = asdict(self)
-        data['@context'] = data.pop('context')
-        return data
-
-# --- Pure Python MinHash (Similarity Fallback) ---
-class PyMinHash:
-    """
-    A simple MinHash implementation for similarity detection.
-    Hashes n-grams and keeps the minimum hash values (Sketch).
-    """
-    def __init__(self, num_perm=128, seed=1):
-        self.num_perm = num_perm
-        self.seed = seed
-        self.minhash = np.full(num_perm, np.inf)
-
-    def update(self, data: bytes):
-        # Extremely simple k-gram hashing for demo. 
-        # In prod, use rolling hash (Rabin-Karp) for speed.
-        # This is strictly a fallback standard.
-        if not data: return
-        
-        # Sample chunks to be fast? Or just hash 128 chunks?
-        # Strategy: Hash the 64KB chunk itself.
-        h = int(hashlib.md5(data).hexdigest(), 16)
-        
-        # Permute
-        for i in range(self.num_perm):
-            # A simple linear permutation
-            ph = (h ^ (i * 0x5bd1e995)) & 0xFFFFFFFF
-            if ph < self.minhash[i]:
-                self.minhash[i] = ph
-
-    def signature(self) -> str:
-        return ",".join(map(str, self.minhash[:10])) + "..." # Truncated for display
-
-# --- Authority Manager (Ed25519) ---
-class AuthorityManager:
-    def __init__(self):
-        self.keys_dir = KEYS_DIR
-        self.private_key_path = os.path.join(KEYS_DIR, f"{KEY_NAME}_private.pem")
-        self.public_key_path = os.path.join(KEYS_DIR, f"{KEY_NAME}_public.pem")
-        self._ensure_keys()
-        
-    def _ensure_keys(self):
-        if not os.path.exists(self.keys_dir):
-            os.makedirs(self.keys_dir)
-            
-        if not os.path.exists(self.private_key_path):
-            console.print("[yellow]Generating new Ed25519 Identity Keys...[/yellow]")
-            priv_key = ed25519.Ed25519PrivateKey.generate()
-            
-            # Save Private
-            with open(self.private_key_path, "wb") as f:
-                f.write(priv_key.private_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.NoEncryption()
-                ))
-            
-            # Save Public
-            pub_key = priv_key.public_key()
-            with open(self.public_key_path, "wb") as f:
-                f.write(pub_key.public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo
-                ))
-    
-    def get_machine_fingerprint(self) -> str:
-        # Node + System + Release + Machine
-        raw = f"{platform.node()}-{platform.system()}-{platform.release()}-{platform.machine()}"
-        # Add MAC
-        raw += f"-{uuid.getnode()}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
-    def sign_seal(self, root_hash: str, timestamp: float) -> str:
-        fingerprint = self.get_machine_fingerprint()
-        payload = f"{root_hash}|{fingerprint}|{timestamp}".encode()
-
-        with open(self.private_key_path, "rb") as f:
-            priv_key = serialization.load_pem_private_key(f.read(), password=None)
-
-        signature = priv_key.sign(payload)
-        return signature.hex()
+    seal_mode: str = SEAL_MODE
 
 
 # --- Offline Signature Verification ---
-
-WEB_AUTHORITY_KEY_URL = "https://bitseal.orygn.tech/.well-known/bitseal-authority-key.json"
-
 
 def _build_web_signed_message(root_hash_hex: str, timestamp: float) -> bytes:
     """Reconstructs the 40-byte message the web Authority signs: 32-byte root hash
@@ -202,13 +120,18 @@ def _build_web_signed_message(root_hash_hex: str, timestamp: float) -> bytes:
 
 
 def _build_cli_signed_message(root_hash_hex: str, fingerprint: str, timestamp: float) -> bytes:
-    """Reconstructs what AuthorityManager.sign_seal signs for local CLI seals."""
+    """Reconstructs what legacy (pre-0.2) CLI seals signed locally. Kept for
+    offline verification of historical manifests produced before the HTTP cutover."""
     return f"{root_hash_hex}|{fingerprint}|{timestamp}".encode()
 
 
 def _is_web_signed_manifest(manifest: Dict[str, Any]) -> bool:
     signer = manifest.get("signer", "") or ""
-    return "Cloud Authority" in signer or "Vercel" in signer
+    return (
+        "Orygn Authority" in signer
+        or "Cloud Authority" in signer
+        or "Vercel" in signer
+    )
 
 
 def fetch_web_authority_public_key(url: str = WEB_AUTHORITY_KEY_URL, timeout: float = 10.0) -> Dict[str, Any]:
@@ -220,13 +143,12 @@ def fetch_web_authority_public_key(url: str = WEB_AUTHORITY_KEY_URL, timeout: fl
 def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
     """Verifies a seal manifest's Ed25519 signature fully offline.
 
-    For web-signed manifests (signer contains "Cloud Authority" or "Vercel"),
-    supply the web Authority public key PEM (or let this function fetch the
-    published key if omitted).
+    For web-signed manifests (signer contains "Orygn Authority" or any of the
+    legacy "Cloud Authority" / "Vercel" strings), supply the Authority public
+    key PEM or let this function fetch the published key if omitted.
 
-    For CLI-signed manifests, supply the signer's published public key PEM.
-    The CLI's per-machine key is not published by BitSeal, so the caller must
-    obtain it out-of-band.
+    For CLI-signed manifests (legacy pre-0.2 SDK), supply the signer's public
+    key PEM. Those keys were per-machine and never published centrally.
 
     Returns {"ok": bool, "reason": str, "format": "web"|"cli"}.
     """
@@ -285,6 +207,7 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
     except Exception:
         return {"ok": False, "reason": "signature did not verify", "format": fmt}
 
+
 # --- Forensic Engine ---
 class MerkleTree:
     def __init__(self, leaf_hashes: List[str]):
@@ -302,7 +225,7 @@ class MerkleTree:
                 combined = left + right
                 if blake3:
                     node_hash = blake3.blake3(bytes.fromhex(combined)).hexdigest()
-                else: 
+                else:
                     node_hash = hashlib.sha256(bytes.fromhex(combined)).hexdigest()
                 next_layer.append(node_hash)
             self.tree_layers.append(next_layer)
@@ -312,17 +235,22 @@ class MerkleTree:
     def root(self) -> str:
         return self.tree_layers[-1][0] if self.tree_layers else ""
 
+
 class HashManager:
     """V1 High-Throughput Hash Manager 2MB Buffer"""
     def __init__(self, filepath: str):
         self.filepath = filepath
         self.file_size = os.path.getsize(filepath)
 
-    async def compute_forensics(self) -> Tuple[str, str, str, List[str], float, List[int]]:
-        b3 = blake3.blake3() if blake3 else hashlib.sha256()
+    async def compute_forensics(self) -> Tuple[str, str, List[str], float, List[int]]:
+        if not blake3:
+            raise RuntimeError(
+                "blake3 is required for the unified Merkle format. "
+                "Install it with: pip install blake3"
+            )
+        b3 = blake3.blake3()
         s3 = hashlib.sha3_512()
-        min_hasher = PyMinHash()
-        
+
         merkle_leaves = []
         high_entropy_zones = []
         byte_counts = np.zeros(256, dtype=np.int64)
@@ -331,39 +259,28 @@ class HashManager:
 
         with open(self.filepath, "rb") as f:
             while True:
-                # 2MB Buffer Read
                 buffer = f.read(BUFFER_SIZE)
-                if not buffer: break
-                
-                # Update global stream hashes
+                if not buffer:
+                    break
+
                 b3.update(buffer)
                 s3.update(buffer)
-                
-                # Process 64KB sub-chunks
+
                 for i in range(0, len(buffer), CHUNK_SIZE):
-                    sub_chunk = buffer[i : i + CHUNK_SIZE]
-                    
-                    # Merkle Leaf
-                    if blake3:
-                        leaf = blake3.blake3(sub_chunk).hexdigest()
-                    else:
-                        leaf = hashlib.sha256(sub_chunk).hexdigest()
+                    sub_chunk = buffer[i:i + CHUNK_SIZE]
+
+                    leaf = blake3.blake3(sub_chunk).hexdigest()
                     merkle_leaves.append(leaf)
-                    
-                    # MinHash
-                    min_hasher.update(sub_chunk)
-                    
-                    # Entropy
+
                     counts = np.bincount(np.frombuffer(sub_chunk, dtype=np.uint8), minlength=256)
                     byte_counts += counts
                     total_bytes += len(sub_chunk)
-                    
-                    # Local Entropy Heatmap
+
                     local_probs = counts[counts > 0] / len(sub_chunk)
                     local_ent = -np.sum(local_probs * np.log2(local_probs))
                     if local_ent > 7.6:
                         high_entropy_zones.append(chunk_idx)
-                    
+
                     chunk_idx += 1
 
         if total_bytes > 0:
@@ -372,199 +289,198 @@ class HashManager:
         else:
             global_entropy = 0.0
 
-        return b3.hexdigest(), s3.hexdigest(), min_hasher.signature(), merkle_leaves, float(global_entropy), high_entropy_zones
+        return b3.hexdigest(), s3.hexdigest(), merkle_leaves, float(global_entropy), high_entropy_zones
 
+
+# --- HTTP Ledger Client ---
 class BitSealLedger:
-    def __init__(self):
-        self.offline_mode = False
-        self.db = None
-        
-        try:
-            # 1. Try existing app
-            try:
-                firebase_admin.get_app()
-            except ValueError:
-                # 2. Try Service Account
-                if os.path.exists("serviceAccountKey.json"):
-                    cred = credentials.Certificate("serviceAccountKey.json")
-                    firebase_admin.initialize_app(cred)
-                else:
-                    # 3. Try ADC (This throws if not set up)
-                    try:
-                        cred = credentials.ApplicationDefault()
-                        firebase_admin.initialize_app(cred)
-                    except Exception:
-                        self.offline_mode = True
-                        print("[yellow]>> No Cloud Credentials found. Running in OFFLINE QUEUE MODE.[/yellow]")
+    """Thin HTTP client for the BitSeal web ledger. Holds no credentials; all
+    state lives on the server. The SDK sends X-API-Client so the server skips
+    the Turnstile human-check requirement; per-IP rate limits apply equally to
+    browser and SDK traffic."""
 
-            if not self.offline_mode:
-                self.db = firestore.client()
-        except Exception as e:
-            # Catch-all for any other initialization errors
-            self.offline_mode = True
-            print(f"[yellow]>> Ledger Init Failed ({e}). Running in OFFLINE QUEUE MODE.[/yellow]")
+    def __init__(self, api_base: str = API_BASE, timeout: int = HTTP_TIMEOUT):
+        self.api_base = api_base.rstrip("/")
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": API_CLIENT_TAG,
+            "X-API-Client": API_CLIENT_TAG,
+            "Accept": "application/json",
+        })
+
+    def _format_http_error(self, resp: "requests.Response") -> str:
+        try:
+            payload = resp.json()
+            msg = payload.get("error") or payload.get("message") or str(payload)
+        except Exception:
+            msg = (resp.text or "").strip()[:500] or f"HTTP {resp.status_code}"
+        if resp.status_code == 429:
+            retry = payload.get("retry_after_seconds") if isinstance(payload, dict) else None
+            if retry:
+                return f"{msg} (retry after ~{retry}s)"
+        return f"HTTP {resp.status_code}: {msg}"
 
     def verify_seal(self, root_hash: str, public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
+        """Look up a root_hash on the ledger and re-verify its signature.
+
+        Return shape is preserved from pre-0.2 for verify.py compatibility:
+        { valid, ledger_present, signature_verified, signature_format,
+          signature_note, timestamp_utc, signature, filename, signer }
+        """
         if not root_hash or len(root_hash) != 64 or not all(c in "0123456789abcdefABCDEF" for c in root_hash):
             return {"valid": False, "error": "Invalid root hash format (expected 64-char hex)."}
 
-        if self.offline_mode or self.db is None:
-            return {"valid": False, "error": "Ledger unreachable (offline mode). Cannot query registry."}
+        try:
+            resp = self.session.get(
+                f"{self.api_base}/api/verify",
+                params={"root": root_hash.lower()},
+                timeout=self.timeout,
+            )
+        except requests.RequestException as e:
+            return {"valid": False, "error": f"Network error contacting {self.api_base}: {e}"}
+
+        if resp.status_code == 404:
+            return {"valid": False, "error": "Seal not found in registry."}
+        if resp.status_code != 200:
+            return {"valid": False, "error": self._format_http_error(resp)}
 
         try:
-            docs = list(self.db.collection("seals").where("root_hash", "==", root_hash).limit(1).stream())
-            if not docs:
-                return {"valid": False, "error": "Seal not found in registry."}
-
-            data = docs[0].to_dict()
-
-            # Ledger presence alone is not proof. Re-verify the Ed25519 signature
-            # against the published Authority key (web seals) or caller-supplied
-            # key (CLI seals).
-            sig_result = verify_manifest_signature(data, public_key_pem=public_key_pem)
-
-            return {
-                "valid": True,
-                "ledger_present": True,
-                "signature_verified": sig_result["ok"],
-                "signature_format": sig_result.get("format"),
-                "signature_note": None if sig_result["ok"] else sig_result["reason"],
-                "timestamp_utc": data.get("timestamp_utc"),
-                "signature": data.get("signature"),
-                "filename": data.get("filename"),
-                "signer": data.get("signer"),
-            }
+            payload = resp.json()
         except Exception as e:
-            return {"valid": False, "error": f"Ledger query failed: {e}"}
+            return {"valid": False, "error": f"Could not parse verify response: {e}"}
 
-    def register_seal(self, seal: SealManifest) -> str:
-        if self.offline_mode:
-            # Delayed Sync Logic
-            pending_file = "pending_sync.json"
-            queue = []
-            if os.path.exists(pending_file):
-                with open(pending_file, "r") as f:
-                    queue = json.load(f)
-            
-            queue.append(seal.to_json_ld())
-            with open(pending_file, "w") as f:
-                json.dump(queue, f, indent=2)
-            return "OFFLINE_QUEUED"
-        else:
-            doc_ref = self.db.collection("seals").add(seal.to_json_ld())
-            return doc_ref[1].id
+        manifest = payload.get("data") or {}
 
-    def sync_pending_seals(self) -> int:
-        if self.offline_mode:
-            print("[red]Cannot sync: Still in offline mode (Check keys/internet).[/red]")
-            return 0
-            
-        pending_file = "pending_sync.json"
-        if not os.path.exists(pending_file):
-            return 0
-            
-        with open(pending_file, "r") as f:
-            queue = json.load(f)
-            
-        if not queue:
-            return 0
-            
-        synced_count = 0
-        console.print(f"[cyan]Syncing {len(queue)} offline seals...[/cyan]")
-        
-        failed = []
-        for item in queue:
-            try:
-                self.db.collection("seals").add(item)
-                synced_count += 1
-                console.print(f"  [green]Uploaded:[/green] {item['root_hash'][:16]}...")
-            except Exception as e:
-                console.print(f"  [red]Failed:[/red] {e}")
-                failed.append(item)
-        
-        # Rewrite queue if failures, else delete
-        if failed:
-            with open(pending_file, "w") as f:
-                json.dump(failed, f, indent=2)
-        else:
-            os.remove(pending_file)
-            
-        return synced_count
+        # The server already re-verifies the Ed25519 signature, but we also
+        # re-verify locally so callers with --public-key can pin a specific key
+        # and so the SDK's answer does not depend solely on server-side logic.
+        local_sig = verify_manifest_signature(manifest, public_key_pem=public_key_pem)
+
+        return {
+            "valid": True,
+            "ledger_present": True,
+            "signature_verified": bool(payload.get("signature_verified")) and local_sig["ok"],
+            "signature_format": local_sig.get("format"),
+            "signature_note": None if local_sig["ok"] else local_sig["reason"],
+            "timestamp_utc": manifest.get("timestamp_utc"),
+            "signature": manifest.get("signature"),
+            "filename": manifest.get("filename"),
+            "signer": manifest.get("signer"),
+            "tree_consistent": payload.get("tree_consistent"),
+            "tree_note": payload.get("tree_note"),
+        }
+
+    def submit_seal(self, manifest: SealManifest) -> Dict[str, Any]:
+        """POST a manifest to /api/seal. The server signs, persists, and returns
+        a base64-encoded PDF. Raises RuntimeError on any non-2xx response."""
+        body = asdict(manifest)
+        try:
+            resp = self.session.post(
+                f"{self.api_base}/api/seal",
+                json=body,
+                timeout=self.timeout,
+            )
+        except requests.RequestException as e:
+            raise RuntimeError(f"Network error contacting {self.api_base}: {e}") from e
+
+        if resp.status_code != 200:
+            raise RuntimeError(self._format_http_error(resp))
+
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise RuntimeError(f"Could not parse seal response: {e}") from e
+
+        if not data.get("success"):
+            raise RuntimeError(f"Seal rejected: {data.get('error') or 'unknown error'}")
+
+        return data
+
 
 # --- CORE API ---
 
-async def process_seal(filepath: str, output_dir: str = None, progress_callback=None) -> Dict[str, Any]:
-    """
-    Programmatic entry point for sealing a file.
-    Returns dictionary with: {root_hash, seal_id, pdf_path, signature}
-    """
-    # 1. Authority
-    auth = AuthorityManager()
-    fp = auth.get_machine_fingerprint()
+async def process_seal(filepath: str, output_dir: Optional[str] = None, progress_callback=None) -> Dict[str, Any]:
+    """Seal a file end-to-end. Hashes locally, POSTs the manifest to the web
+    sealer, writes the returned PDF to disk, and returns a summary dict.
 
-    # 2. Forensics
+    Return shape (pre-0.2 compatibility plus a couple of new fields):
+        { root_hash, seal_id, pdf_path, signature, timestamp, entropy, hotspots,
+          signer, seal_mode, leaf_count }
+    """
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File not found: {filepath}")
+    size_bytes = os.path.getsize(filepath)
+    if size_bytes <= 0:
+        raise ValueError("File is empty.")
+    if size_bytes > MAX_FILE_SIZE:
+        raise ValueError(f"File too large ({size_bytes} bytes). Max is {MAX_FILE_SIZE} bytes (50MB).")
+
+    # 1. Forensics (local)
     hasher = HashManager(filepath)
-    b3_hex, s3_hex, min_sig, leaves, entropy, hotspots = await hasher.compute_forensics()
-    
+    b3_hex, s3_hex, leaves, entropy, hotspots = await hasher.compute_forensics()
+
     merkle = MerkleTree(leaves)
     root = merkle.root
-    
-    # Deep Scan (Metadata)
+
+    # 2. MIME detection
     if filetype:
         kind = filetype.guess(filepath)
         mime = kind.mime if kind else "application/octet-stream"
     else:
         mime = "application/octet-stream"
-        
+
     if progress_callback:
         progress_callback(100)
 
-    # 3. Signing
-    timestamp = time.time()
-    signature = auth.sign_seal(root, timestamp)
-
-    # 4. Manifest
+    # 3. Build request manifest (server fills in timestamp + signature)
     manifest = SealManifest(
         filename=os.path.basename(filepath),
-        size_bytes=os.path.getsize(filepath),
-        timestamp_utc=timestamp,
+        size_bytes=size_bytes,
         root_hash=root,
         blake3_hash=b3_hex,
         sha3_512_hash=s3_hex,
-        fuzzy_hash=min_sig,
         entropy=entropy,
         mime_type=mime,
-        metadata={},
         merkle_tree=leaves,
-        machine_fingerprint=fp,
-        high_entropy_zones=hotspots,
-        signature=signature
     )
 
-    # 5. Output PDF
-    # If output_dir is specified, put it there. Otherwise, side-by-side.
+    # 4. POST to web sealer
+    ledger = BitSealLedger()
+    result = ledger.submit_seal(manifest)
+
+    # 5. Decode PDF to disk
     if output_dir:
         pdf_name = f"{os.path.basename(filepath)}.seal.pdf"
         pdf_path = os.path.join(output_dir, pdf_name)
     else:
         pdf_path = f"{filepath}.seal.pdf"
-        
-    gen = ReportGenerator.ReportGenerator(pdf_path)
-    gen.build_report(manifest.to_json_ld())
-    
-    # 6. Ledger
-    ledger = BitSealLedger()
-    seal_id = ledger.register_seal(manifest)
-    
+
+    pdf_b64 = result.get("pdf_base64")
+    if not pdf_b64:
+        raise RuntimeError("Server response missing pdf_base64")
+    try:
+        pdf_bytes = base64.b64decode(pdf_b64)
+    except Exception as e:
+        raise RuntimeError(f"Invalid pdf_base64 in response: {e}") from e
+
+    os.makedirs(os.path.dirname(os.path.abspath(pdf_path)) or ".", exist_ok=True)
+    with open(pdf_path, "wb") as f:
+        f.write(pdf_bytes)
+
     return {
-        "root_hash": root,
-        "seal_id": seal_id,
+        "root_hash": result.get("root_hash") or root,
+        "seal_id": result.get("seal_id"),
         "pdf_path": pdf_path,
-        "signature": signature,
+        "signature": result.get("signature"),
+        "timestamp": result.get("timestamp"),
         "entropy": entropy,
         "hotspots": hotspots,
-        "machine_id": fp
+        "signer": "Orygn Authority",
+        "seal_mode": result.get("seal_mode") or SEAL_MODE,
+        "leaf_count": result.get("leaf_count") or len(leaves),
     }
+
 
 # --- COMMANDS ---
 
@@ -572,57 +488,56 @@ async def cmd_seal(filepath: str):
     if not os.path.exists(filepath):
         console.print(f"[red]File not found: {filepath}[/red]")
         return
-        
-    console.print(f"[bold cyan]>> BITSEAL V1 // PROTOCOL INITIATED[/bold cyan]")
-    
-    # Hook into UI
+
+    console.print(f"[bold cyan]>> BITSEAL SDK v{SDK_VERSION} // {API_BASE}[/bold cyan]")
+
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
         task = progress.add_task("Streaming Forensics (2MB Buffer)...", total=None)
-        
-        # Call the Core API
-        result = await process_seal(filepath)
-        
+        try:
+            result = await process_seal(filepath)
+        except Exception as e:
+            progress.update(task, completed=100)
+            console.print(f"\n[red]Seal failed:[/red] {e}")
+            return
         progress.update(task, completed=100)
 
-    console.print(f"   Authority Identity: [green]{result['machine_id']}[/green]")
-
-    # 7. Display
     table = Table(title="BitSeal Certificate", style="green")
     table.add_column("Key", style="cyan")
     table.add_column("Value", style="magenta")
-    table.add_row("Root Hash", result['root_hash'][:32]+"...")
-    table.add_row("Ed25519 Sig", result['signature'][:32]+"...")
+    table.add_row("Seal ID", str(result['seal_id']))
+    table.add_row("Root Hash", result['root_hash'][:32] + "...")
+    table.add_row("Signer", result['signer'])
+    table.add_row("Ed25519 Sig", (result['signature'] or '')[:32] + "...")
+    table.add_row("Leaves", str(result['leaf_count']))
     table.add_row("Entropy", f"{result['entropy']:.4f}")
     if result['hotspots']:
-        table.add_row("Anomalies", f"[red]{len(result['hotspots'])} high-entropy zones detected[/red]")
-    table.add_row("Status", f"[bold]{result['seal_id']}[/bold]")
+        table.add_row("Anomalies", f"[yellow]{len(result['hotspots'])} high-entropy zones[/yellow]")
     table.add_row("PDF Report", result['pdf_path'])
     console.print(table)
 
-async def cmd_sync():
-    ledger = BitSealLedger()
-    count = ledger.sync_pending_seals()
-    if count > 0:
-        console.print(f"[bold green]Sync Complete: {count} seals pushed to blockchain.[/bold green]")
-    else:
-        console.print("No pending seals to sync.")
 
 def main():
     if len(sys.argv) < 2:
-        console.print("Usage: bitseal <seal|status|sync> <args>")
+        console.print(f"BitSeal SDK v{SDK_VERSION}")
+        console.print("Usage: python BitSealCore.py <seal|status> <args>")
+        console.print("  seal <file>   Seal a file via the BitSeal web API")
+        console.print("  status        Show SDK + endpoint info")
+        console.print(f"\nAPI: {API_BASE}  (override with BITSEAL_API_URL)")
         return
-        
+
     cmd = sys.argv[1]
     if cmd == "seal":
+        if len(sys.argv) < 3:
+            console.print("[red]Usage: python BitSealCore.py seal <file>[/red]")
+            return
         asyncio.run(cmd_seal(sys.argv[2]))
-    elif cmd == "sync":
-        asyncio.run(cmd_sync())
     elif cmd == "status":
-        auth = AuthorityManager()
-        console.print(f"Machine FP: {auth.get_machine_fingerprint()}")
-        console.print(f"Keys stored in: {auth.keys_dir}")
+        console.print(f"SDK Version: [green]{SDK_VERSION}[/green]")
+        console.print(f"API Endpoint: [green]{API_BASE}[/green]")
+        console.print(f"Client Tag: [green]{API_CLIENT_TAG}[/green]")
     else:
-        console.print("Unknown command")
+        console.print(f"[red]Unknown command: {cmd}[/red]")
+
 
 if __name__ == "__main__":
     main()
