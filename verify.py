@@ -1,132 +1,216 @@
 import sys
 import argparse
 import json
-from BitSealCore import BitSealLedger, verify_manifest_signature, verify_bitcoin_anchor
+
+from rich.console import Console
+
+from _cli_ui import header_panel, kv_table, render_panel, short_hex
+from BitSealCore import (
+    API_BASE,
+    SDK_VERSION,
+    BitSealLedger,
+    verify_bitcoin_anchor,
+    verify_manifest_signature,
+)
+
+console = Console()
+
+
+def _handle_manifest(path, public_key_path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except FileNotFoundError:
+        render_panel(console, "File not found", f"Could not read manifest: {path}", kind="error")
+        return 1
+    except json.JSONDecodeError as e:
+        render_panel(console, "Invalid JSON", f"Could not parse manifest: {e}", kind="error")
+        return 1
+    except OSError as e:
+        render_panel(console, "Read error", f"Could not read manifest: {e}", kind="error")
+        return 1
+
+    pub_pem = None
+    if public_key_path:
+        try:
+            with open(public_key_path, "rb") as f:
+                pub_pem = f.read()
+        except OSError as e:
+            render_panel(console, "Public key read failed", str(e), kind="error")
+            return 1
+
+    console.rule(f"[bold]Offline manifest verification[/bold]  [dim]{path}[/dim]")
+    result = verify_manifest_signature(manifest, public_key_pem=pub_pem)
+
+    if result.get("ok"):
+        body = kv_table(
+            [
+                ("Format", result.get("format", "unknown")),
+                ("Signer", manifest.get("signer")),
+                ("Root hash", short_hex(manifest.get("root_hash"), 32, 8)),
+                ("Timestamp", manifest.get("timestamp_utc")),
+            ]
+        )
+        render_panel(console, "SIGNATURE VALID", body, kind="success")
+        return 0
+
+    reason = result.get("reason") or "unknown failure"
+    body = kv_table(
+        [
+            ("Format", result.get("format") or "unknown"),
+            ("Reason", reason),
+        ]
+    )
+    render_panel(console, "SIGNATURE INVALID", body, kind="error")
+    return 1
+
+
+def _handle_root(root, want_ots):
+    console.rule(f"[bold]Ledger verification[/bold]  [dim]{short_hex(root, 32, 8)}[/dim]")
+
+    ledger = BitSealLedger()
+    result = ledger.verify_seal(root)
+
+    if not result.get("valid"):
+        render_panel(
+            console,
+            "SEAL INVALID OR NOT FOUND",
+            result.get("error") or "Reason unknown.",
+            kind="error",
+        )
+        return 1
+
+    sig_verified = bool(result.get("signature_verified"))
+    sig_format = result.get("signature_format") or "unknown"
+    sig_note = result.get("signature_note")
+
+    rows = [
+        ("Filename", result.get("filename") or "(no filename)"),
+        ("Timestamp", result.get("timestamp_utc")),
+        ("Signer", result.get("signer")),
+        ("Signature", short_hex(result.get("signature"), 20, 10)),
+        ("Signature fmt", sig_format),
+    ]
+    tree_consistent = result.get("tree_consistent")
+    if tree_consistent is not None:
+        rows.append(("Merkle tree", "consistent" if tree_consistent else "inconsistent"))
+
+    if sig_verified:
+        render_panel(console, "LEDGER HIT  -  SIGNATURE VERIFIED", kv_table(rows), kind="success")
+    else:
+        if sig_note:
+            rows.append(("Note", sig_note))
+        render_panel(console, "LEDGER HIT  -  SIGNATURE NOT VERIFIED", kv_table(rows), kind="error")
+        return 1
+
+    if want_ots:
+        exit_code = _render_ots(result.get("ots") or {})
+        if exit_code != 0:
+            return exit_code
+
+    return 0
+
+
+def _render_ots(ots):
+    """Independently re-verify the Bitcoin anchor. Returns the exit code
+    contribution (0 for success / non-applicable / pending, 1 for hard
+    verification failure). Matches the pre-refactor semantics."""
+    status = ots.get("status")
+    console.rule("[bold]Bitcoin anchor (OpenTimestamps)[/bold]")
+
+    if status == "none":
+        render_panel(
+            console,
+            "BITCOIN ANCHOR NOT APPLICABLE",
+            "This seal predates OpenTimestamps support, or the public calendars were unreachable\n"
+            "at seal time. No independent Bitcoin witness is available for this seal.",
+            kind="warning",
+        )
+        return 0
+
+    if status == "pending":
+        rows = []
+        cals = ots.get("calendars") or []
+        if cals:
+            rows.append(("Calendars", f"{len(cals)} accepted"))
+            for i, url in enumerate(cals, start=1):
+                rows.append((f"  #{i}", url))
+        submitted = ots.get("submitted_at")
+        if submitted:
+            rows.append(("Submitted", submitted))
+        rows.append(("Next step", "Re-run with --ots once Bitcoin confirms (typically 1-6h)."))
+        render_panel(console, "BITCOIN ANCHOR PENDING", kv_table(rows), kind="pending")
+        return 0
+
+    if status != "upgraded":
+        render_panel(
+            console,
+            "UNEXPECTED OTS STATUS",
+            f"Server returned status={status!r}. Expected one of: none, pending, upgraded.",
+            kind="error",
+        )
+        return 1
+
+    anchor = verify_bitcoin_anchor(ots)
+    if anchor.get("ok"):
+        rows = [
+            ("Block height", f"#{anchor.get('block_height')}"),
+            ("Block time", anchor.get("block_time")),
+            ("Block hash", short_hex(anchor.get("block_hash"), 16, 8)),
+            ("Mempool.space", anchor.get("mempool_url")),
+        ]
+        source = anchor.get("source")
+        if source:
+            rows.append(("Source", source))
+        render_panel(console, "BITCOIN ANCHOR VERIFIED", kv_table(rows), kind="success")
+        return 0
+
+    rows = [("Reason", anchor.get("reason") or "unknown")]
+    if anchor.get("block_height"):
+        rows.append(("Block height claimed", f"#{anchor['block_height']}"))
+    if anchor.get("block_hash"):
+        rows.append(("Block hash", short_hex(anchor["block_hash"], 16, 8)))
+    render_panel(console, "BITCOIN ANCHOR VERIFICATION FAILED", kv_table(rows), kind="error")
+    return 1
+
 
 def main():
-    print("BitSeal Verification Tool - https://bitseal.orygn.tech/")
-    parser = argparse.ArgumentParser(description="BitSeal Verification Tool (https://bitseal.orygn.tech/)")
-    parser.add_argument("--root", help="Root Hash to verify against the ledger")
-    parser.add_argument("--manifest", help="Path to a seal manifest JSON file for fully-offline verification")
-    parser.add_argument("--public-key", help="Path to Ed25519 public key PEM (required for --manifest with CLI signer; optional for web signer)")
+    parser = argparse.ArgumentParser(
+        prog="verify.py",
+        description="BitSeal verification tool. Online (ledger lookup) or fully offline (manifest signature).",
+    )
+    parser.add_argument("--root", help="Root hash to verify against the public ledger (64-char hex).")
+    parser.add_argument("--manifest", help="Path to a seal manifest JSON file for fully-offline verification.")
+    parser.add_argument(
+        "--public-key",
+        help="Path to Ed25519 public key PEM. Required for --manifest with CLI signer; optional for web signer.",
+    )
     parser.add_argument(
         "--ots",
         action="store_true",
-        help="Independently verify the OpenTimestamps Bitcoin anchor against mempool.space "
-             "(requires --root and `pip install opentimestamps`)",
+        help="Independently verify the OpenTimestamps Bitcoin anchor against mempool.space. "
+             "Requires --root and `pip install opentimestamps`.",
     )
     args = parser.parse_args()
 
+    console.print(header_panel(SDK_VERSION, API_BASE))
+
     if args.manifest:
-        try:
-            with open(args.manifest, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-        except Exception as e:
-            print(f"[-] Could not read manifest: {e}")
-            sys.exit(1)
-
-        pub_pem = None
-        if args.public_key:
-            with open(args.public_key, "rb") as f:
-                pub_pem = f.read()
-
-        print(f"[*] Verifying manifest: {args.manifest} (offline)")
-        result = verify_manifest_signature(manifest, public_key_pem=pub_pem)
-        if result["ok"]:
-            print(f"\n[+] SIGNATURE VALID ({result['format']} format)")
-            print(f"    Signer:    {manifest.get('signer')}")
-            print(f"    Root:      {manifest.get('root_hash')}")
-            print(f"    Timestamp: {manifest.get('timestamp_utc')}")
-            sys.exit(0)
-        else:
-            print(f"\n[-] SIGNATURE INVALID ({result.get('format')} format)")
-            print(f"    Reason: {result['reason']}")
-            sys.exit(1)
+        sys.exit(_handle_manifest(args.manifest, args.public_key))
 
     if not args.root:
-        print("[-] Provide either --root <hash> or --manifest <path>")
+        render_panel(
+            console,
+            "Missing argument",
+            "Provide one of:\n"
+            "  --root <64-char hex>        lookup + verify on the public ledger\n"
+            "  --manifest <path/to.json>   verify a downloaded manifest fully offline",
+            kind="error",
+        )
         sys.exit(2)
 
-    print(f"[*] Verifying Seal Root: {args.root}...")
+    sys.exit(_handle_root(args.root, args.ots))
 
-    ledger = BitSealLedger()
-    result = ledger.verify_seal(args.root)
-
-    if not result.get("valid"):
-        print("\n[-] SEAL INVALID or NOT FOUND")
-        print(f"    Reason: {result.get('error')}")
-        sys.exit(1)
-
-    print("\n[+] LEDGER HIT")
-    print(f"    Filename:  {result.get('filename', 'Unknown')}")
-    print(f"    Timestamp: {result.get('timestamp_utc')}")
-    print(f"    Signer:    {result.get('signer')}")
-    print(f"    Signature: {result.get('signature')}")
-
-    if result.get("signature_verified"):
-        print(f"\n[+] SIGNATURE VERIFIED ({result.get('signature_format')} format)")
-    else:
-        print(f"\n[!] SIGNATURE NOT VERIFIED ({result.get('signature_format')} format)")
-        note = result.get("signature_note")
-        if note:
-            print(f"    Note: {note}")
-        sys.exit(1)
-
-    # --ots: independent Bitcoin anchor verification.
-    # This is additive to the signature check above. A verified signature
-    # proves the BitSeal Authority sealed this root hash; a verified
-    # Bitcoin anchor proves a sha256 of that signature existed in a
-    # specific Bitcoin block, giving a trust-minimized external witness.
-    if args.ots:
-        ots = result.get("ots") or {}
-        status = ots.get("status")
-
-        print("\n[*] Verifying Bitcoin anchor (OpenTimestamps)...")
-
-        if status == "none":
-            print("[!] BITCOIN ANCHOR NOT APPLICABLE")
-            print("    This seal predates OpenTimestamps support or the public calendars")
-            print("    were unreachable at seal time. No independent Bitcoin witness is")
-            print("    available for this seal.")
-            return
-
-        if status == "pending":
-            print("[!] BITCOIN ANCHOR PENDING")
-            print("    Public calendars have accepted the commitment but a Bitcoin block")
-            print("    has not yet confirmed it. Typical latency is 1-6 hours after sealing.")
-            cals = ots.get("calendars") or []
-            if cals:
-                print(f"    Calendars: {len(cals)} accepted")
-                for c in cals:
-                    print(f"      - {c}")
-            submitted = ots.get("submitted_at")
-            if submitted:
-                print(f"    Submitted: {submitted}")
-            print("    Re-run with --ots later to pick up the anchor.")
-            return
-
-        if status != "upgraded":
-            print(f"[-] UNEXPECTED OTS STATUS: {status!r}")
-            sys.exit(1)
-
-        anchor = verify_bitcoin_anchor(ots)
-        if anchor.get("ok"):
-            print("[+] BITCOIN ANCHOR VERIFIED")
-            print(f"    Block height: #{anchor['block_height']}")
-            print(f"    Block time:   {anchor['block_time']}")
-            print(f"    Block hash:   {anchor['block_hash']}")
-            print(f"    Mempool.space: {anchor['mempool_url']}")
-            src = anchor.get("source")
-            if src:
-                print(f"    Source:       {src}")
-        else:
-            print("[-] BITCOIN ANCHOR VERIFICATION FAILED")
-            print(f"    Reason: {anchor.get('reason')}")
-            if anchor.get("block_height"):
-                print(f"    Block height claimed: #{anchor['block_height']}")
-            if anchor.get("block_hash"):
-                print(f"    Block hash:           {anchor['block_hash']}")
-            sys.exit(1)
 
 if __name__ == "__main__":
     main()

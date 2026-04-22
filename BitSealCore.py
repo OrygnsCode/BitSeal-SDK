@@ -672,58 +672,107 @@ async def process_seal(filepath: str, output_dir: Optional[str] = None, progress
 # --- COMMANDS ---
 
 async def cmd_seal(filepath: str):
+    from _cli_ui import header_panel, kv_table, render_panel, short_hex
+
+    console.print(header_panel(SDK_VERSION, API_BASE))
+
     if not os.path.exists(filepath):
-        console.print(f"[red]File not found: {filepath}[/red]")
+        render_panel(console, "File not found", f"Path: {filepath}", kind="error")
         return
 
-    console.print(f"[bold cyan]>> BITSEAL SDK v{SDK_VERSION} // {API_BASE}[/bold cyan]")
+    console.rule(f"[bold]Sealing[/bold]  [dim]{os.path.basename(filepath)}[/dim]")
 
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
-        task = progress.add_task("Streaming Forensics (2MB Buffer)...", total=None)
+    size_bytes = os.path.getsize(filepath)
+    size_mb = size_bytes / (1024 * 1024)
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task(
+            f"Streaming forensics - {size_mb:.2f} MB - submitting to Authority",
+            total=None,
+        )
         try:
             result = await process_seal(filepath)
         except Exception as e:
-            progress.update(task, completed=100)
-            console.print(f"\n[red]Seal failed:[/red] {e}")
+            render_panel(console, "SEAL FAILED", str(e), kind="error")
             return
-        progress.update(task, completed=100)
 
-    table = Table(title="BitSeal Certificate", style="green")
-    table.add_column("Key", style="cyan")
-    table.add_column("Value", style="magenta")
-    table.add_row("Seal ID", str(result['seal_id']))
-    table.add_row("Root Hash", result['root_hash'][:32] + "...")
-    table.add_row("Signer", result['signer'])
-    table.add_row("Ed25519 Sig", (result['signature'] or '')[:32] + "...")
-    table.add_row("Leaves", str(result['leaf_count']))
-    table.add_row("Entropy", f"{result['entropy']:.4f}")
-    if result['hotspots']:
-        table.add_row("Anomalies", f"[yellow]{len(result['hotspots'])} high-entropy zones[/yellow]")
-    table.add_row("PDF Report", result['pdf_path'])
-    console.print(table)
+    rows = [
+        ("Seal ID", result["seal_id"]),
+        ("Root hash", short_hex(result["root_hash"], 32, 8)),
+        ("Signer", result["signer"]),
+        ("Signature", short_hex(result.get("signature") or "", 20, 10)),
+        ("Seal mode", result.get("seal_mode")),
+        ("Leaves", f"{result['leaf_count']} chunks of {CHUNK_SIZE // 1024} KB"),
+        ("Entropy", f"{result['entropy']:.4f} bits/byte"),
+    ]
+    hotspots = result.get("hotspots") or []
+    if hotspots:
+        rows.append(("Anomalies", f"[yellow]{len(hotspots)} high-entropy zones[/yellow]"))
+    rows.append(("PDF report", result["pdf_path"]))
+
+    render_panel(console, "SEAL CREATED", kv_table(rows), kind="success")
+
+    root = result.get("root_hash")
+    if root:
+        hint = Table.grid(padding=(0, 2))
+        hint.add_column(style="dim")
+        hint.add_row("Verify later with:")
+        hint.add_row(f"[cyan]python verify.py --root {root}[/cyan]")
+        console.print()
+        console.print(hint)
 
 
 def main():
+    from _cli_ui import header_panel, kv_table, render_panel
+
     if len(sys.argv) < 2:
-        console.print(f"BitSeal SDK v{SDK_VERSION}")
-        console.print("Usage: python BitSealCore.py <seal|status> <args>")
-        console.print("  seal <file>   Seal a file via the BitSeal web API")
-        console.print("  status        Show SDK + endpoint info")
-        console.print(f"\nAPI: {API_BASE}  (override with BITSEAL_API_URL)")
+        console.print(header_panel(SDK_VERSION, API_BASE))
+        usage = kv_table(
+            [
+                ("seal <file>", "Hash, sign, and register a file on the BitSeal ledger."),
+                ("verify <root>", "Look up a root hash on the ledger (alias: run verify.py)."),
+                ("status", "Show SDK build + endpoint + client tag."),
+            ]
+        )
+        render_panel(console, "USAGE", usage, kind="info")
+        console.print(f"\n[dim]Override the API endpoint with the BITSEAL_API_URL env var. Current: {API_BASE}[/dim]")
         return
 
     cmd = sys.argv[1]
     if cmd == "seal":
         if len(sys.argv) < 3:
-            console.print("[red]Usage: python BitSealCore.py seal <file>[/red]")
+            render_panel(console, "Missing argument", "Usage: python BitSealCore.py seal <file>", kind="error")
             return
         asyncio.run(cmd_seal(sys.argv[2]))
+    elif cmd == "verify":
+        if len(sys.argv) < 3:
+            render_panel(console, "Missing argument", "Usage: python BitSealCore.py verify <root-hash>", kind="error")
+            return
+        import subprocess
+        subprocess.call([sys.executable, os.path.join(os.path.dirname(__file__), "verify.py"), "--root", sys.argv[2]])
     elif cmd == "status":
-        console.print(f"SDK Version: [green]{SDK_VERSION}[/green]")
-        console.print(f"API Endpoint: [green]{API_BASE}[/green]")
-        console.print(f"Client Tag: [green]{API_CLIENT_TAG}[/green]")
+        console.print(header_panel(SDK_VERSION, API_BASE))
+        body = kv_table(
+            [
+                ("SDK version", SDK_VERSION),
+                ("API endpoint", API_BASE),
+                ("Client tag", API_CLIENT_TAG),
+                ("Seal mode", SEAL_MODE),
+                ("Max file size", f"{MAX_FILE_SIZE // (1024 * 1024)} MB"),
+            ]
+        )
+        render_panel(console, "STATUS", body, kind="info")
     else:
-        console.print(f"[red]Unknown command: {cmd}[/red]")
+        render_panel(
+            console,
+            "Unknown command",
+            f"Got: {cmd!r}\nExpected one of: seal, verify, status.",
+            kind="error",
+        )
 
 
 if __name__ == "__main__":
