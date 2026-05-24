@@ -103,4 +103,4 @@ For full legal documentation and the technical whitepaper, visit the [Documentat
 ## License
 
 This SDK is available under the MIT License.
-&copy; 2026 Orygn LLC. All Rights Reserved.
+&copy; 2026 [Orygn LLC](https://orygn.tech). All Rights Reserved.
