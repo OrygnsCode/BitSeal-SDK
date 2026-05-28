@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 Orygn LLC
 
+import base64
+import hashlib
 import sys
 import argparse
 import json
 
+import requests
+from cryptography.hazmat.primitives import serialization
 from rich.console import Console
 
 from _cli_ui import header_panel, kv_table, render_panel, short_hex
@@ -17,6 +21,86 @@ from BitSealCore import (
 )
 
 console = Console()
+
+
+WELL_KNOWN_PATH = "/.well-known/bitseal-authority-key.json"
+
+
+def _handle_fingerprint(public_key_path):
+    """Compute and display the SHA-256 fingerprint of the Authority
+    public key over its DER-encoded SubjectPublicKeyInfo. Mirrors the
+    documented openssl pipeline on /legal/key-ceremony Section 6:
+
+        openssl pkey -pubin -pubout -outform der | openssl dgst -sha256
+
+    Without --public-key, fetches the current key from the well-known
+    endpoint. With --public-key, fingerprints a local PEM file (useful
+    for a historical or archived key)."""
+
+    if public_key_path:
+        try:
+            with open(public_key_path, "rb") as f:
+                pem_bytes = f.read()
+            source = f"local PEM: {public_key_path}"
+        except OSError as e:
+            render_panel(console, "Public key read failed", str(e), kind="error")
+            return 1
+    else:
+        well_known_url = API_BASE.rstrip("/") + WELL_KNOWN_PATH
+        try:
+            headers = {"X-API-Client": f"BitSeal-SDK/{SDK_VERSION} python"}
+            resp = requests.get(well_known_url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as e:
+            render_panel(console, "Could not fetch Authority key", str(e), kind="error")
+            return 1
+        except json.JSONDecodeError as e:
+            render_panel(console, "Malformed JSON from well-known", str(e), kind="error")
+            return 1
+
+        pem_text = (data.get("current_key") or {}).get("public_key_pem")
+        if not pem_text:
+            render_panel(
+                console,
+                "Malformed well-known response",
+                f"Missing current_key.public_key_pem at {well_known_url}",
+                kind="error",
+            )
+            return 1
+        pem_bytes = pem_text.encode("utf-8")
+        source = well_known_url
+
+    try:
+        key = serialization.load_pem_public_key(pem_bytes)
+        der = key.public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    except Exception as e:
+        render_panel(console, "Could not parse Authority public key PEM", str(e), kind="error")
+        return 1
+
+    digest = hashlib.sha256(der).digest()
+    hex_str = digest.hex()
+    b64_str = base64.b64encode(digest).decode("ascii")
+    colon_str = ":".join(hex_str[i:i + 2].upper() for i in range(0, len(hex_str), 2))
+
+    body = kv_table(
+        [
+            ("Source", source),
+            ("SHA-256 (hex)", hex_str),
+            ("SHA-256 (base64)", b64_str),
+            ("SHA-256 (colon)", colon_str),
+        ]
+    )
+    render_panel(console, "AUTHORITY KEY FINGERPRINT", body, kind="info")
+    console.print(
+        "Compare against the fingerprint displayed in Section 2 of "
+        "https://bitseal.orygn.tech/legal/key-ceremony. A mismatch is "
+        "the strongest signal of CDN or supply-chain tampering."
+    )
+    return 0
 
 
 def _handle_manifest(path, public_key_path):
@@ -186,7 +270,7 @@ def main():
     parser.add_argument("--manifest", help="Path to a seal manifest JSON file for fully-offline verification.")
     parser.add_argument(
         "--public-key",
-        help="Path to Ed25519 public key PEM. Required for --manifest with CLI signer; optional for web signer.",
+        help="Path to Ed25519 public key PEM. Required for --manifest with CLI signer; optional for web signer; optional for --fingerprint (uses the well-known endpoint if omitted).",
     )
     parser.add_argument(
         "--ots",
@@ -194,9 +278,17 @@ def main():
         help="Independently verify the OpenTimestamps Bitcoin anchor against mempool.space. "
              "Requires --root and `pip install opentimestamps`.",
     )
+    parser.add_argument(
+        "--fingerprint",
+        action="store_true",
+        help="Compute the SHA-256 fingerprint of the Authority public key over its DER-encoded SubjectPublicKeyInfo. Matches the openssl pipeline documented at /legal/key-ceremony Section 6.",
+    )
     args = parser.parse_args()
 
     console.print(header_panel(SDK_VERSION, API_BASE))
+
+    if args.fingerprint:
+        sys.exit(_handle_fingerprint(args.public_key))
 
     if args.manifest:
         sys.exit(_handle_manifest(args.manifest, args.public_key))
@@ -207,7 +299,8 @@ def main():
             "Missing argument",
             "Provide one of:\n"
             "  --root <64-char hex>        lookup + verify on the public ledger\n"
-            "  --manifest <path/to.json>   verify a downloaded manifest fully offline",
+            "  --manifest <path/to.json>   verify a downloaded manifest fully offline\n"
+            "  --fingerprint               compute the Authority public-key fingerprint",
             kind="error",
         )
         sys.exit(2)
