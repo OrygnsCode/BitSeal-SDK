@@ -10,7 +10,7 @@
 
 [![Website](https://img.shields.io/badge/Website-bitseal.orygn.tech-22d3ee?style=for-the-badge)](https://bitseal.orygn.tech/)
 [![License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=for-the-badge)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge)](https://www.python.org/)
 
 </div>
 

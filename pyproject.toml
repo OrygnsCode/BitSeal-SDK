@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bitseal"
+version = "0.3.0"
+description = "Python SDK and offline verifier for the BitSeal cryptographic proof-of-existence service."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Orygn LLC", email = "security@orygn.tech" },
+]
+maintainers = [
+    { name = "Orygn LLC", email = "security@orygn.tech" },
+]
+keywords = [
+    "bitseal",
+    "proof-of-existence",
+    "cryptography",
+    "blake3",
+    "ed25519",
+    "sha3",
+    "merkle-tree",
+    "timestamping",
+    "opentimestamps",
+    "bitcoin",
+    "provenance",
+    "digital-integrity",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Legal Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Archiving",
+]
+dependencies = [
+    "blake3",
+    "cryptography",
+    "filetype",
+    "numpy",
+    "opentimestamps",
+    "pillow",
+    "requests",
+    "rich",
+]
+
+[project.urls]
+Homepage = "https://bitseal.orygn.tech"
+Documentation = "https://bitseal.orygn.tech/docs"
+Repository = "https://github.com/OrygnsCode/BitSeal-SDK"
+Issues = "https://github.com/OrygnsCode/BitSeal-SDK/issues"
+"Authority Key" = "https://bitseal.orygn.tech/.well-known/bitseal-authority-key.json"
+"Key Ceremony" = "https://bitseal.orygn.tech/legal/key-ceremony"
+"Security Policy" = "https://bitseal.orygn.tech/security"
+
+[project.scripts]
+bitseal-verify = "bitseal.verify:main"
+
+[tool.setuptools]
+packages = ["bitseal"]
