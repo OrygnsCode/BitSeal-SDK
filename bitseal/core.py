@@ -94,10 +94,11 @@ API_BASE = (os.environ.get("BITSEAL_API_URL") or DEFAULT_API_BASE).rstrip("/")
 # Turnstile widget check; rate limits apply identically to web and SDK traffic.
 API_CLIENT_TAG = f"BitSeal-SDK/{SDK_VERSION} python/{platform.python_version()}"
 
-HTTP_TIMEOUT = 60  # seconds; 50MB payloads are well under this on typical links
+HTTP_TIMEOUT = 60  # seconds; 1 GB payloads on typical broadband finish well under this
 
-# 50MB upload cap must match the server-side guard in web/app/api/seal/route.js.
-MAX_FILE_SIZE = 50 * 1024 * 1024
+# 1 GB upload cap must match the server-side guard in web/app/api/seal/route.js.
+# The web browser sealer also enforces this in web/app/seal/page.js.
+MAX_FILE_SIZE = 1024 * 1024 * 1024
 
 # Authority key document (for offline manifest verification).
 WEB_AUTHORITY_KEY_URL = f"{DEFAULT_API_BASE}/.well-known/bitseal-authority-key.json"
@@ -605,7 +606,7 @@ async def process_seal(filepath: str, output_dir: Optional[str] = None, progress
     if size_bytes <= 0:
         raise ValueError("File is empty.")
     if size_bytes > MAX_FILE_SIZE:
-        raise ValueError(f"File too large ({size_bytes} bytes). Max is {MAX_FILE_SIZE} bytes (50MB).")
+        raise ValueError(f"File too large ({size_bytes} bytes). Max is {MAX_FILE_SIZE} bytes (1 GB).")
 
     # 1. Forensics (local)
     hasher = HashManager(filepath)
@@ -766,7 +767,11 @@ def main():
                 ("API endpoint", API_BASE),
                 ("Client tag", API_CLIENT_TAG),
                 ("Seal mode", SEAL_MODE),
-                ("Max file size", f"{MAX_FILE_SIZE // (1024 * 1024)} MB"),
+                ("Max file size", (
+                    f"{MAX_FILE_SIZE // (1024 ** 3)} GB"
+                    if MAX_FILE_SIZE >= 1024 ** 3
+                    else f"{MAX_FILE_SIZE // (1024 * 1024)} MB"
+                )),
             ]
         )
         render_panel(console, "STATUS", body, kind="info")
