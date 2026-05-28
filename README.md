@@ -18,7 +18,7 @@
 
 ## Overview
 
-**BitSeal** is a cryptographically secure forensic transparency protocol. It creates immutable, timestamped proofs for digital assets using distinct Merkle Trees and Ed25519 digital signatures.
+**BitSeal** is a cryptographic proof-of-existence service. It creates tamper-evident, timestamped proofs for files using BLAKE3 Merkle trees and Ed25519 digital signatures.
 
 This repository (**BitSeal-SDK**) is the reference implementation of the protocol. It contains the full cryptographic pipeline: chunking, BLAKE3 Merkle tree construction, Ed25519 signing, and both online and fully-offline verification. Every seal produced by the web service at [bitseal.orygn.tech](https://bitseal.orygn.tech/) can be verified end-to-end against the code in this repository without trusting the web service itself. The unified manifest format (`merkle-blake3-64k-v1`) guarantees that a web seal and a CLI seal of the same bytes yield the same root hash.
 
@@ -32,9 +32,9 @@ This repository (**BitSeal-SDK**) is the reference implementation of the protoco
 *   **Ed25519 Signatures**: High-performance, high-security Edwards-curve Digital Signature Algorithm.
 *   **Dual-Hashing Architecture**:
     *   **BLAKE3**: Blindingly fast local client-side verification.
-    *   **SHA3-512**: NSA-grade "Deep Scan" archival integrity.
+    *   **SHA3-512**: NIST-standardized (FIPS 202) secondary whole-file digest for cryptographic redundancy.
 *   **Merkle Tree Manifests**: Tamper-evident data structures for seal logs.
-*   **Zero-Knowledge Architecture**: Files never leave the client device during the sealing process.
+*   **Client-side hashing**: Files never leave the device during the sealing process. Only the manifest is transmitted.
 
 ---
 
@@ -87,7 +87,7 @@ else:
 
  The core verification process (`BitSealCore.py`) performs the following checks:
 1.  **Format Validation**: Ensures the hash is a valid hex string of correct length.
-2.  **Ledger Lookup**: Query the immutable public ledger for the existence of the seal.
+2.  **Ledger Lookup**: Query the public ledger for the existence of the seal.
 3.  **Signature Verification**: Cryptographically verify that the seal was signed by the **BitSeal Authority Key** (Ed25519 Public Key).
 4.  **Integrity Check**: Recompute the hash of the manifest to ensure no data has been altered.
 
