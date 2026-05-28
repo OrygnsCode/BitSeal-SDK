@@ -11,6 +11,7 @@ the last element before pairing.
 """
 
 import blake3
+import pytest
 
 from BitSealCore import MerkleTree
 
@@ -76,3 +77,46 @@ def test_different_leaves_different_roots():
     a = MerkleTree(["11" * 32, "22" * 32]).root
     b = MerkleTree(["22" * 32, "11" * 32]).root
     assert a != b
+
+
+def test_merkle_tree_raises_when_blake3_missing(monkeypatch):
+    """Audit finding M2 regression guard.
+
+    If blake3 failed to import (its module-level binding in
+    bitseal.core is None), MerkleTree must hard-raise RuntimeError.
+    The pre-M2 code silently fell back to SHA-256, which produced a
+    tree that did NOT match the merkle-blake3-64k-v1 spec and would
+    misverify against real seals without surfacing any error to the
+    caller.
+
+    We simulate the missing-blake3 state by monkeypatching the module
+    attribute rather than uninstalling the package. The fail-fast
+    must happen at MerkleTree construction time (no partial state),
+    and the error message must name blake3 so users know what to
+    install."""
+    import bitseal.core
+
+    monkeypatch.setattr(bitseal.core, "blake3", None)
+
+    with pytest.raises(RuntimeError, match=r"blake3 is required"):
+        bitseal.core.MerkleTree(["11" * 32, "22" * 32])
+
+
+def test_merkle_tree_never_uses_sha256_fallback(monkeypatch):
+    """Belt-and-braces for M2: even with a single-leaf input (which
+    doesn't enter the hashing loop), and even if SHA-256 happens to
+    be available, the absence of blake3 must still raise."""
+    import bitseal.core
+
+    monkeypatch.setattr(bitseal.core, "blake3", None)
+
+    # Two-leaf input exercises the loop path.
+    with pytest.raises(RuntimeError):
+        bitseal.core.MerkleTree(["aa" * 32, "bb" * 32])
+
+    # Single-leaf input does NOT enter the loop (root == leaf), but
+    # the check happens regardless of leaf count. Pre-M2 behavior
+    # would have silently constructed a single-leaf tree without
+    # touching the broken fallback.
+    with pytest.raises(RuntimeError):
+        bitseal.core.MerkleTree(["aa" * 32])

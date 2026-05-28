@@ -401,6 +401,11 @@ class MerkleTree:
         self._build_tree()
 
     def _build_tree(self):
+        if not blake3:
+            raise RuntimeError(
+                "blake3 is required to build a merkle-blake3-64k-v1 tree. "
+                "Install it with: pip install blake3"
+            )
         current_layer = self.leaves
         while len(current_layer) > 1:
             next_layer = []
@@ -408,10 +413,7 @@ class MerkleTree:
                 left = current_layer[i]
                 right = current_layer[i+1] if i + 1 < len(current_layer) else left
                 combined = left + right
-                if blake3:
-                    node_hash = blake3.blake3(bytes.fromhex(combined)).hexdigest()
-                else:
-                    node_hash = hashlib.sha256(bytes.fromhex(combined)).hexdigest()
+                node_hash = blake3.blake3(bytes.fromhex(combined)).hexdigest()
                 next_layer.append(node_hash)
             self.tree_layers.append(next_layer)
             current_layer = next_layer
