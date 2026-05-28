@@ -1,0 +1,108 @@
+{
+    "seal_mode": "merkle-blake3-64k-v1",
+    "chunk_size_bytes": 65536,
+    "generator": "web/scripts/merkle-vectors.mjs",
+    "description": "Golden test vectors for the unified Merkle manifest spec. If the Python SDK and the JS web lib agree on all roots here, they will agree on any real file. Do not edit by hand — regenerate with `node web/scripts/merkle-vectors.mjs --generate`.",
+    "vectors": [
+        {
+            "name": "1-byte",
+            "pattern": "linear",
+            "size_bytes": 1,
+            "note": "Single-byte file: one leaf, root equals that leaf.",
+            "leaf_count": 1,
+            "first_leaf": "448bd8dd9624154a690f8e84dc52d6f633ba7cd545c4d3c9b4e0f6a2f6fa71f4",
+            "last_leaf": "448bd8dd9624154a690f8e84dc52d6f633ba7cd545c4d3c9b4e0f6a2f6fa71f4",
+            "root_hash": "448bd8dd9624154a690f8e84dc52d6f633ba7cd545c4d3c9b4e0f6a2f6fa71f4"
+        },
+        {
+            "name": "sub-chunk",
+            "pattern": "linear",
+            "size_bytes": 1024,
+            "note": "Under one chunk: still a single leaf.",
+            "leaf_count": 1,
+            "first_leaf": "b017ef5fc657b7dfff99ea58e6c8c5ceadcebe091567682530cb66a07fc8c94c",
+            "last_leaf": "b017ef5fc657b7dfff99ea58e6c8c5ceadcebe091567682530cb66a07fc8c94c",
+            "root_hash": "b017ef5fc657b7dfff99ea58e6c8c5ceadcebe091567682530cb66a07fc8c94c"
+        },
+        {
+            "name": "exactly-64KiB",
+            "pattern": "linear",
+            "size_bytes": 65536,
+            "note": "Exactly one chunk boundary: single leaf, no tree folding.",
+            "leaf_count": 1,
+            "first_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "last_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "root_hash": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8"
+        },
+        {
+            "name": "64KiB-plus-1",
+            "pattern": "linear",
+            "size_bytes": 65537,
+            "note": "Two chunks where the second is 1 byte: tests the short-final-chunk rule.",
+            "leaf_count": 2,
+            "first_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "last_leaf": "448bd8dd9624154a690f8e84dc52d6f633ba7cd545c4d3c9b4e0f6a2f6fa71f4",
+            "root_hash": "b57c5bd8194c0344c68573727dba1b217d73f7fb2f85223bb2a63a5026fbea6d"
+        },
+        {
+            "name": "two-chunks",
+            "pattern": "linear",
+            "size_bytes": 131072,
+            "note": "Exactly two chunks: one internal hash, no odd-layer duplication.",
+            "leaf_count": 2,
+            "first_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "last_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "root_hash": "ce90d9b61121e58f48e4d6a6e7438186749014642921905149320265d47f4db3"
+        },
+        {
+            "name": "three-chunks",
+            "pattern": "linear",
+            "size_bytes": 196608,
+            "note": "Three chunks: odd layer forces duplicate-last at leaf level.",
+            "leaf_count": 3,
+            "first_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "last_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "root_hash": "07998ce29e455878497e1c06356b2b3f1439ba1c70066deea409432c408bdd72"
+        },
+        {
+            "name": "five-chunks",
+            "pattern": "squared",
+            "size_bytes": 327680,
+            "note": "Five chunks: odd layer at leaf level, then again at layer 2.",
+            "leaf_count": 5,
+            "first_leaf": "d4e9d187468a65d524e9e1b57ccc0f6cb2f5cc68289476337d165025728b43ac",
+            "last_leaf": "d4e9d187468a65d524e9e1b57ccc0f6cb2f5cc68289476337d165025728b43ac",
+            "root_hash": "a8805c12bfd928c27709ee010f57959dc67f4b88fee1b3ef8f01fb04143640a2"
+        },
+        {
+            "name": "1MiB",
+            "pattern": "linear",
+            "size_bytes": 1048576,
+            "note": "1 MiB: 16 leaves, balanced binary tree of depth 4.",
+            "leaf_count": 16,
+            "first_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "last_leaf": "9d29fb090a7dbcdc5f97832ec431eb2d5d673d585e303254cc5611966520a2e8",
+            "root_hash": "eeb39dd70dd21ca589e6f839cc9bcec37403a5260dde846ce55401a40d9e594f"
+        },
+        {
+            "name": "zeros-128KiB",
+            "pattern": "zeros",
+            "size_bytes": 131072,
+            "note": "All-zero bytes: both leaves are identical but root ≠ leaf (pair-hash).",
+            "leaf_count": 2,
+            "first_leaf": "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56",
+            "last_leaf": "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56",
+            "root_hash": "f24f8b362dee8cf4f04b8691f36a7b9c820092308082ca92d0aed2b86298790a"
+        },
+        {
+            "name": "ones-130KiB",
+            "pattern": "ones",
+            "size_bytes": 133120,
+            "note": "All-0xFF bytes, odd leaves, short final chunk.",
+            "leaf_count": 3,
+            "first_leaf": "400bf5efa517c126cb4982e1782679f1b6c4b69e5f5d88333f000bed4b45e610",
+            "last_leaf": "bd6cb226660e34f6000cfcdca66b5750a629777f4c987cee2c64807f056fdf8c",
+            "root_hash": "d183b64b80aa739b7105c85ee5315855c7873f1c37a305f91b403bdc56ee1c62"
+        }
+    ]
+}

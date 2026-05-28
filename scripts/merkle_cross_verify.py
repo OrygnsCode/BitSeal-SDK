@@ -6,18 +6,24 @@
 Cross-language verifier for the unified Merkle manifest spec
 (merkle-blake3-64k-v1).
 
-Reads the golden vectors emitted by the web test script
-(web/scripts/merkle-vectors.json) and asserts that the Python
-implementation in BitSealCore.py produces byte-for-byte identical
-leaves and roots.
+Reads the golden vectors emitted by the JavaScript generator in the
+BitSeal web monorepo and asserts that the Python implementation in
+bitseal.core produces byte-for-byte identical leaves and roots.
 
-If this script passes, the CLI and the web service are guaranteed to
-emit the same root_hash for any identical input file, since both
+If this script passes, the SDK and the web service are guaranteed to
+emit the same root_hash for any identical input file, because both
 funnel through the same spec.
 
+The vectors file is bundled into the SDK at tests/vectors/
+merkle-vectors.json so any outside auditor can run this end-to-end
+against a clone of the SDK alone, without needing the web monorepo.
+The canonical generator (web/scripts/merkle-vectors.mjs in the web
+monorepo) emits this file; the SDK-bundled copy is refreshed each
+time the spec changes.
+
 Usage:
-    python BitSeal-SDK/scripts/merkle_cross_verify.py
-    python BitSeal-SDK/scripts/merkle_cross_verify.py --vectors path/to/merkle-vectors.json
+    python scripts/merkle_cross_verify.py
+    python scripts/merkle_cross_verify.py --vectors path/to/merkle-vectors.json
 """
 from __future__ import annotations
 
@@ -35,7 +41,26 @@ import blake3  # type: ignore
 from BitSealCore import CHUNK_SIZE, SEAL_MODE, MerkleTree
 
 
-DEFAULT_VECTORS_PATH = SDK_DIR.parent / "BitSeal" / "web" / "scripts" / "merkle-vectors.json"
+# Preferred location: bundled with the SDK. Works for any clone.
+SDK_LOCAL_VECTORS = SDK_DIR / "tests" / "vectors" / "merkle-vectors.json"
+# Legacy location: the web monorepo as a sibling directory. Used during
+# local dev when the maintainer regenerates vectors via the web repo's
+# Node generator and has not yet synced the file into the SDK.
+SIBLING_REPO_VECTORS = SDK_DIR.parent / "BitSeal" / "web" / "scripts" / "merkle-vectors.json"
+
+
+def _default_vectors_path() -> Path:
+    """Pick the first vectors file that actually exists on disk.
+
+    Prefers the SDK-bundled copy (works for any outside auditor).
+    Falls back to the web-monorepo copy for maintainers working on
+    both repos simultaneously. If neither exists, returns the SDK
+    path so the not-found error message points to the right place."""
+    if SDK_LOCAL_VECTORS.exists():
+        return SDK_LOCAL_VECTORS
+    if SIBLING_REPO_VECTORS.exists():
+        return SIBLING_REPO_VECTORS
+    return SDK_LOCAL_VECTORS
 
 
 def pattern_linear(size: int) -> bytes:
@@ -84,7 +109,10 @@ def run(vectors_path: Path) -> int:
     if not vectors_path.exists():
         print(f"Missing vectors file: {vectors_path}", file=sys.stderr)
         print(
-            "Run `node web/scripts/merkle-vectors.mjs --generate` first.",
+            "The SDK bundles a copy at tests/vectors/merkle-vectors.json. "
+            "If it is also missing, regenerate from the web monorepo "
+            "with `node web/scripts/merkle-vectors.mjs --generate` and "
+            "copy the result into tests/vectors/merkle-vectors.json.",
             file=sys.stderr,
         )
         return 2
@@ -159,8 +187,12 @@ def main() -> int:
     parser.add_argument(
         "--vectors",
         type=Path,
-        default=DEFAULT_VECTORS_PATH,
-        help="Path to merkle-vectors.json (default: web/scripts/merkle-vectors.json)",
+        default=_default_vectors_path(),
+        help=(
+            "Path to merkle-vectors.json (default: "
+            "tests/vectors/merkle-vectors.json when present, otherwise "
+            "the sibling web-monorepo copy)."
+        ),
     )
     args = parser.parse_args()
     return run(args.vectors)
