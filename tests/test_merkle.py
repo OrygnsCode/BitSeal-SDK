@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """MerkleTree math: verify the `merkle-blake3-64k-v1` layer construction
 against hand-computed expected roots.
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """Cross-verify a web-signed manifest using the Python SDK's offline verifier.
 
 Reads a hex signature from argv[1], hex root from argv[2], timestamp from argv[3],

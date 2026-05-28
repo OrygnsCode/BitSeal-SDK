@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 import sys
 import argparse
 import json

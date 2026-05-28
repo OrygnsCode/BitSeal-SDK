@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
 
 import asyncio
 import base64
@@ -29,7 +31,7 @@ except ImportError as e:
     print(f"CRITICAL: UI/Math libraries missing ({e}). Run pip install rich numpy")
     sys.exit(1)
 
-# 2. Crypto (offline verification only — all signing happens server-side).
+# 2. Crypto (offline verification only; all signing happens server-side).
 try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
@@ -63,7 +65,7 @@ try:
 except ImportError:
     Image = None
 
-# OpenTimestamps (Part 7c) is optional — only required when the user passes
+# OpenTimestamps (Part 7c) is optional, only required when the user passes
 # --ots to verify.py. Keeping it optional lets existing verify flows keep
 # working on systems that never installed it.
 try:

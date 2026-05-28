@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """HashManager.compute_forensics: verify per-chunk blake3 leaves, global
 blake3, global sha3-512, entropy, and leaf count against known inputs.
 """

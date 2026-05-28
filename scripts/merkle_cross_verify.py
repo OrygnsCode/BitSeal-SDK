@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """
 Cross-language verifier for the unified Merkle manifest spec
 (merkle-blake3-64k-v1).
@@ -147,7 +150,7 @@ def run(vectors_path: Path) -> int:
     if failures:
         print(f"{failures} vector(s) failed")
         return 1
-    print(f"All {len(data['vectors'])} vectors passed — Python matches JS byte-for-byte.")
+    print(f"All {len(data['vectors'])} vectors passed. Python matches JS byte-for-byte.")
     return 0
 
 

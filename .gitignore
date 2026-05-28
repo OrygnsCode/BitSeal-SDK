@@ -1,4 +1,4 @@
-# Secrets (CRITICAL — do not commit any env or key material)
+# Secrets (CRITICAL: do not commit any env or key material)
 .env
 .env.*
 !.env.example
@@ -49,3 +49,4 @@ htmlcov/
 
 # SDK runtime state (per WORK_LOG: pending_sync.json lives in user-data dir on real installs)
 pending_sync.json
+tmp_demo/

@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """Shared Rich-based visual primitives used by the SDK's CLI entry points
 (BitSealCore.py for sealing, verify.py for verification).
 
 Private-by-convention (leading underscore). Third-party integrators should
-import from BitSealCore, not this module — the surface here is tuned for
+import from BitSealCore, not this module. The surface here is tuned for
 CLI output and may change when the UI is retuned.
 """
 

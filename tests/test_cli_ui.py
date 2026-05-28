@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """Smoke tests for the shared CLI UI primitives. Full visual regression is
 out of scope; these tests confirm the helpers return the expected rich
 types and do not raise on representative inputs.

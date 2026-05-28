@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """Offline signature verification round-trip using a deterministic Ed25519
 keypair. Covers both signer formats the SDK understands: the web-signer
 format (32-byte root || 8-byte little-endian double timestamp) and the

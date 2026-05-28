@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2026 Orygn LLC
+
 """BitSealLedger._format_http_error: verifies the error message shape the
 SDK surfaces to users. This is the last line of defense before a raw HTTP
 error reaches the user, so regressions here degrade UX silently.
@@ -37,7 +40,7 @@ def test_json_message_field_fallback():
 
 def test_rate_limit_includes_retry_after():
     # The 429 branch intentionally omits the status code in favor of a
-    # user-friendly "retry after ~Ns" phrasing — keep that contract.
+    # user-friendly "retry after ~Ns" phrasing; keep that contract.
     ledger = BitSealLedger()
     resp = _mock_response(429, {"error": "Too many requests", "retry_after_seconds": 42})
     msg = ledger._format_http_error(resp)
