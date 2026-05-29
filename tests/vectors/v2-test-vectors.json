@@ -1,0 +1,291 @@
+{
+  "spec_version": "merkle-blake3-64k-v2",
+  "spec_path": "spec/v2-manifest.md",
+  "generated_by": "spec/generate-v2-vectors.py",
+  "ed25519_test_keypair": {
+    "source": "RFC 8032 §7.1 Test 1",
+    "private_key_raw_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "public_key_raw_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "warning": "PUBLIC test key. Do NOT use to sign real seals."
+  },
+  "positive_vectors": [
+    {
+      "name": "A",
+      "description": "Single-chunk file (11 bytes). Exercises 1-leaf Merkle tree (root == leaf).",
+      "input_manifest_pretty": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest"
+      },
+      "canonical_bytes_hex": "7b2240636f6e74657874223a2268747470733a2f2f773369642e6f72672f73656375726974792f7631222c22626c616b65335f68617368223a2264373439383165666137306130633838306238643863313938356430373564626362663637396239396135663939313465356161663936623833316139653234222c226368756e6b5f73697a655f6279746573223a36353533362c22636c69656e745f746167223a224269745365616c20436c6f7564222c22656e74726f7079223a22322e38343534222c2266696c656e616d65223a2268656c6c6f2e747874222c22686967685f656e74726f70795f7a6f6e6573223a5b5d2c226d65726b6c655f74726565223a5b2264373439383165666137306130633838306238643863313938356430373564626362663637396239396135663939313465356161663936623833316139653234225d2c226d696d655f74797065223a22746578742f706c61696e222c22726f6f745f68617368223a2264373439383165666137306130633838306238643863313938356430373564626362663637396239396135663939313465356161663936623833316139653234222c227365616c5f6d6f6465223a226d65726b6c652d626c616b65332d36346b2d7632222c22736861335f3531325f68617368223a223834303030363635336539616339653935313137613135633931356361616238313636323931386539323564653965303034663737346666383264373037396134306434643237623162333732363537633631643436643437303330346338386337383862336134353237616430373464316463636265653564626161393961222c227369676e6572223a224f7279676e20417574686f72697479222c2273697a655f6279746573223a31312c2274696d657374616d705f757463223a22313731343337383234372e313233343536222c2274797065223a224269745365616c4d616e6966657374227d",
+      "canonical_bytes_utf8": "{\"@context\":\"https://w3id.org/security/v1\",\"blake3_hash\":\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\",\"chunk_size_bytes\":65536,\"client_tag\":\"BitSeal Cloud\",\"entropy\":\"2.8454\",\"filename\":\"hello.txt\",\"high_entropy_zones\":[],\"merkle_tree\":[\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\"],\"mime_type\":\"text/plain\",\"root_hash\":\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\",\"seal_mode\":\"merkle-blake3-64k-v2\",\"sha3_512_hash\":\"840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a\",\"signer\":\"Orygn Authority\",\"size_bytes\":11,\"timestamp_utc\":\"1714378247.123456\",\"type\":\"BitSealManifest\"}",
+      "canonical_bytes_length": 717,
+      "sha3_512_digest_hex": "7d88ae3e2c903d877063d0599a6bc6f925549a0120d83c6d4be619dd57a464daa8fba8a5a60552bf74000c344baafcf807115ba5db3a86574ddc716bdf9ddd8a",
+      "signature_hex": "dc9d463e52ccb3f731681c9beb1d4867915a6fa065e2b681a69e1583c7b8ebb8af34dd38b0f6496263f575eb493f803e5b59c3ed41b247b49ff867707c9bfc0a",
+      "signed_manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest",
+        "signature": "dc9d463e52ccb3f731681c9beb1d4867915a6fa065e2b681a69e1583c7b8ebb8af34dd38b0f6496263f575eb493f803e5b59c3ed41b247b49ff867707c9bfc0a"
+      }
+    },
+    {
+      "name": "B",
+      "description": "Multi-chunk file (196608 bytes). Exercises 3-leaf Merkle tree with odd-layer-duplicate rule.",
+      "input_manifest_pretty": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "678426dad0d75d6bce039eab4a2414eda52eb1368db475e6b5fee2cf97a42495",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "0.0000",
+        "filename": "zeros.bin",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56",
+          "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56",
+          "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56"
+        ],
+        "mime_type": "application/octet-stream",
+        "root_hash": "1d0afa5e36715d5607543a3cf2c853ec31af1f42aa9828629f1711cfe1f0e317",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "64b3c6908a14729b7c5c3d3b5a3b7f904a3853bb1329d166de3ea7925fe5d8ecda83e6c2870e14b0c7cd509136aafb8c92186383460433f9d304121c5678d857",
+        "signer": "Orygn Authority",
+        "size_bytes": 196608,
+        "timestamp_utc": "1714378300.000000",
+        "type": "BitSealManifest"
+      },
+      "canonical_bytes_hex": "7b2240636f6e74657874223a2268747470733a2f2f773369642e6f72672f73656375726974792f7631222c22626c616b65335f68617368223a2236373834323664616430643735643662636530333965616234613234313465646135326562313336386462343735653662356665653263663937613432343935222c226368756e6b5f73697a655f6279746573223a36353533362c22636c69656e745f746167223a224269745365616c20436c6f7564222c22656e74726f7079223a22302e30303030222c2266696c656e616d65223a227a65726f732e62696e222c22686967685f656e74726f70795f7a6f6e6573223a5b5d2c226d65726b6c655f74726565223a5b2233626465616638663865393837383062333138313036616166646333636132353766373364663132336439376236393131326232363034346339316137643536222c2233626465616638663865393837383062333138313036616166646333636132353766373364663132336439376236393131326232363034346339316137643536222c2233626465616638663865393837383062333138313036616166646333636132353766373364663132336439376236393131326232363034346339316137643536225d2c226d696d655f74797065223a226170706c69636174696f6e2f6f637465742d73747265616d222c22726f6f745f68617368223a2231643061666135653336373135643536303735343361336366326338353365633331616631663432616139383238363239663137313163666531663065333137222c227365616c5f6d6f6465223a226d65726b6c652d626c616b65332d36346b2d7632222c22736861335f3531325f68617368223a223634623363363930386131343732396237633563336433623561336237663930346133383533626231333239643136366465336561373932356665356438656364613833653663323837306531346230633763643530393133366161666238633932313836333833343630343333663964333034313231633536373864383537222c227369676e6572223a224f7279676e20417574686f72697479222c2273697a655f6279746573223a3139363630382c2274696d657374616d705f757463223a22313731343337383330302e303030303030222c2274797065223a224269745365616c4d616e6966657374227d",
+      "canonical_bytes_utf8": "{\"@context\":\"https://w3id.org/security/v1\",\"blake3_hash\":\"678426dad0d75d6bce039eab4a2414eda52eb1368db475e6b5fee2cf97a42495\",\"chunk_size_bytes\":65536,\"client_tag\":\"BitSeal Cloud\",\"entropy\":\"0.0000\",\"filename\":\"zeros.bin\",\"high_entropy_zones\":[],\"merkle_tree\":[\"3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56\",\"3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56\",\"3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56\"],\"mime_type\":\"application/octet-stream\",\"root_hash\":\"1d0afa5e36715d5607543a3cf2c853ec31af1f42aa9828629f1711cfe1f0e317\",\"seal_mode\":\"merkle-blake3-64k-v2\",\"sha3_512_hash\":\"64b3c6908a14729b7c5c3d3b5a3b7f904a3853bb1329d166de3ea7925fe5d8ecda83e6c2870e14b0c7cd509136aafb8c92186383460433f9d304121c5678d857\",\"signer\":\"Orygn Authority\",\"size_bytes\":196608,\"timestamp_utc\":\"1714378300.000000\",\"type\":\"BitSealManifest\"}",
+      "canonical_bytes_length": 869,
+      "sha3_512_digest_hex": "3d3cb344cac58c0f05d7d132d05a40ee3efb855601423fb81db8df56ee6595127d716971fd102b5aad554a6c63364bcd211897823270971f57945042f97cd29c",
+      "signature_hex": "0a102dabbd3e363287293271af3917c021e0e355c83ae08eed98bc2cffe79621f743091a44e6cd980bc2ae1fd82bd88dd97b4f1907bc4d90af6ce033a46dce03",
+      "signed_manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "678426dad0d75d6bce039eab4a2414eda52eb1368db475e6b5fee2cf97a42495",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "0.0000",
+        "filename": "zeros.bin",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56",
+          "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56",
+          "3bdeaf8f8e98780b318106aafdc3ca257f73df123d97b69112b26044c91a7d56"
+        ],
+        "mime_type": "application/octet-stream",
+        "root_hash": "1d0afa5e36715d5607543a3cf2c853ec31af1f42aa9828629f1711cfe1f0e317",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "64b3c6908a14729b7c5c3d3b5a3b7f904a3853bb1329d166de3ea7925fe5d8ecda83e6c2870e14b0c7cd509136aafb8c92186383460433f9d304121c5678d857",
+        "signer": "Orygn Authority",
+        "size_bytes": 196608,
+        "timestamp_utc": "1714378300.000000",
+        "type": "BitSealManifest",
+        "signature": "0a102dabbd3e363287293271af3917c021e0e355c83ae08eed98bc2cffe79621f743091a44e6cd980bc2ae1fd82bd88dd97b4f1907bc4d90af6ce033a46dce03"
+      }
+    },
+    {
+      "name": "C",
+      "description": "Single-chunk file (11 bytes) with synthetic OTS sub-block. Exercises nested-object canonicalization.",
+      "input_manifest_pretty": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest",
+        "ots": {
+          "digest": "fc2ec54dd68a34a330aa2938843be8b43b880f7a00488b5b2fd7140afd7692f0",
+          "submitted_to": [
+            "https://alice.btc.calendar.opentimestamps.org"
+          ],
+          "pending_proof_base64": "8BBPcGVuVGltZXN0YW1wcwBQcm9vZv8=",
+          "submitted_at": "2024-04-29T07:30:48Z"
+        }
+      },
+      "canonical_bytes_hex": "7b2240636f6e74657874223a2268747470733a2f2f773369642e6f72672f73656375726974792f7631222c22626c616b65335f68617368223a2264373439383165666137306130633838306238643863313938356430373564626362663637396239396135663939313465356161663936623833316139653234222c226368756e6b5f73697a655f6279746573223a36353533362c22636c69656e745f746167223a224269745365616c20436c6f7564222c22656e74726f7079223a22322e38343534222c2266696c656e616d65223a2268656c6c6f2e747874222c22686967685f656e74726f70795f7a6f6e6573223a5b5d2c226d65726b6c655f74726565223a5b2264373439383165666137306130633838306238643863313938356430373564626362663637396239396135663939313465356161663936623833316139653234225d2c226d696d655f74797065223a22746578742f706c61696e222c226f7473223a7b22646967657374223a2266633265633534646436386133346133333061613239333838343362653862343362383830663761303034383862356232666437313430616664373639326630222c2270656e64696e675f70726f6f665f626173653634223a22384242506347567556476c745a584e305957317763774251636d39765a76383d222c227375626d69747465645f6174223a22323032342d30342d32395430373a33303a34385a222c227375626d69747465645f746f223a5b2268747470733a2f2f616c6963652e6274632e63616c656e6461722e6f70656e74696d657374616d70732e6f7267225d7d2c22726f6f745f68617368223a2264373439383165666137306130633838306238643863313938356430373564626362663637396239396135663939313465356161663936623833316139653234222c227365616c5f6d6f6465223a226d65726b6c652d626c616b65332d36346b2d7632222c22736861335f3531325f68617368223a223834303030363635336539616339653935313137613135633931356361616238313636323931386539323564653965303034663737346666383264373037396134306434643237623162333732363537633631643436643437303330346338386337383862336134353237616430373464316463636265653564626161393961222c227369676e6572223a224f7279676e20417574686f72697479222c2273697a655f6279746573223a31312c2274696d657374616d705f757463223a22313731343337383234372e313233343536222c2274797065223a224269745365616c4d616e6966657374227d",
+      "canonical_bytes_utf8": "{\"@context\":\"https://w3id.org/security/v1\",\"blake3_hash\":\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\",\"chunk_size_bytes\":65536,\"client_tag\":\"BitSeal Cloud\",\"entropy\":\"2.8454\",\"filename\":\"hello.txt\",\"high_entropy_zones\":[],\"merkle_tree\":[\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\"],\"mime_type\":\"text/plain\",\"ots\":{\"digest\":\"fc2ec54dd68a34a330aa2938843be8b43b880f7a00488b5b2fd7140afd7692f0\",\"pending_proof_base64\":\"8BBPcGVuVGltZXN0YW1wcwBQcm9vZv8=\",\"submitted_at\":\"2024-04-29T07:30:48Z\",\"submitted_to\":[\"https://alice.btc.calendar.opentimestamps.org\"]},\"root_hash\":\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\",\"seal_mode\":\"merkle-blake3-64k-v2\",\"sha3_512_hash\":\"840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a\",\"signer\":\"Orygn Authority\",\"size_bytes\":11,\"timestamp_utc\":\"1714378247.123456\",\"type\":\"BitSealManifest\"}",
+      "canonical_bytes_length": 962,
+      "sha3_512_digest_hex": "45471f2265f535209245e7fc0781c86c2dde852104d71b88037829bef2a9aedf0c1f4d543eeb7fcc7ab59530f579471aed36c0b261571ff144fde27d85bbb069",
+      "signature_hex": "982218844c4426acb6289435b5059e6c29c4357184b26fafbc5cd22a39581c14481c84b472033463ed328b6782bc0d4d8ed4f725bf2227b3347e65526b630504",
+      "signed_manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest",
+        "ots": {
+          "digest": "fc2ec54dd68a34a330aa2938843be8b43b880f7a00488b5b2fd7140afd7692f0",
+          "submitted_to": [
+            "https://alice.btc.calendar.opentimestamps.org"
+          ],
+          "pending_proof_base64": "8BBPcGVuVGltZXN0YW1wcwBQcm9vZv8=",
+          "submitted_at": "2024-04-29T07:30:48Z"
+        },
+        "signature": "982218844c4426acb6289435b5059e6c29c4357184b26fafbc5cd22a39581c14481c84b472033463ed328b6782bc0d4d8ed4f725bf2227b3347e65526b630504"
+      }
+    }
+  ],
+  "negative_vectors": [
+    {
+      "name": "N1_seal_mode_mismatch",
+      "expected_failure": "seal_mode is v1, must be rejected by v2 verifier",
+      "manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v1",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest",
+        "signature": "dc9d463e52ccb3f731681c9beb1d4867915a6fa065e2b681a69e1583c7b8ebb8af34dd38b0f6496263f575eb493f803e5b59c3ed41b247b49ff867707c9bfc0a"
+      }
+    },
+    {
+      "name": "N2_unknown_field",
+      "expected_failure": "extra unsigned field present; signature was over canonical bytes without it",
+      "manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest",
+        "signature": "dc9d463e52ccb3f731681c9beb1d4867915a6fa065e2b681a69e1583c7b8ebb8af34dd38b0f6496263f575eb493f803e5b59c3ed41b247b49ff867707c9bfc0a",
+        "injected": "x"
+      }
+    },
+    {
+      "name": "N3_timestamp_as_number",
+      "expected_failure": "v2 requires timestamp_utc as a string; numeric form breaks canonicalization",
+      "manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": 1714378247.123456,
+        "type": "BitSealManifest",
+        "signature": "dc9d463e52ccb3f731681c9beb1d4867915a6fa065e2b681a69e1583c7b8ebb8af34dd38b0f6496263f575eb493f803e5b59c3ed41b247b49ff867707c9bfc0a"
+      }
+    },
+    {
+      "name": "N4_keys_unsorted_sample",
+      "expected_failure": "canonical bytes built without lexicographic key sort hash differently",
+      "wrong_canonical_bytes_sample": "{\"signer\":\"Orygn Authority\",\"root_hash\":\"d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24\",\"seal_mode\":\"merkle-blake3-64k-v2\"}"
+    },
+    {
+      "name": "N5_tampered_signature",
+      "expected_failure": "Ed25519 verify fails",
+      "manifest": {
+        "@context": "https://w3id.org/security/v1",
+        "blake3_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "chunk_size_bytes": 65536,
+        "client_tag": "BitSeal Cloud",
+        "entropy": "2.8454",
+        "filename": "hello.txt",
+        "high_entropy_zones": [],
+        "merkle_tree": [
+          "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"
+        ],
+        "mime_type": "text/plain",
+        "root_hash": "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24",
+        "seal_mode": "merkle-blake3-64k-v2",
+        "sha3_512_hash": "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a",
+        "signer": "Orygn Authority",
+        "size_bytes": 11,
+        "timestamp_utc": "1714378247.123456",
+        "type": "BitSealManifest",
+        "signature": "dc9d463e52ccb3f731681c9beb1d4867915a6fa065e2b681a69e1583c7b8ebb8af34dd38b0f6496263f575eb493f803e5b59c3ed41b247b49ff867707c9bfc0b"
+      }
+    }
+  ]
+}

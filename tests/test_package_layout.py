@@ -41,6 +41,8 @@ _BITSEAL_PUBLIC_NAMES = [
     "MerkleTree",
     "SDK_VERSION",
     "SEAL_MODE",
+    "SEAL_MODE_V1",
+    "SEAL_MODE_V2",
     "SealManifest",
     "WEB_AUTHORITY_KEY_URL",
     "fetch_web_authority_public_key",

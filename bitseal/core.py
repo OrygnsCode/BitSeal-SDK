@@ -4,6 +4,7 @@
 import asyncio
 import base64
 import hashlib
+import json
 import os
 import struct
 import sys
@@ -77,14 +78,18 @@ except ImportError:
     _HAS_OPENTIMESTAMPS = False
 
 # --- Configuration Constants ---
-SDK_VERSION = "0.3.1"
+SDK_VERSION = "0.3.2"
 CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 
-# Canonical name of the manifest format shared with the web sealer.
-# See https://bitseal.orygn.tech/.well-known/bitseal-authority-key.json
-# for the full spec published under the "manifest_spec" field.
-SEAL_MODE = "merkle-blake3-64k-v1"
+# Canonical names of the manifest formats the SDK can verify. SEAL_MODE
+# (=SEAL_MODE_V1) is what the SDK still puts in outgoing seal requests
+# so the existing server accepts them. SEAL_MODE_V2 is the post-audit
+# spec at https://github.com/OrygnsCode/BitSeal/blob/main/spec/v2-manifest.md
+# — the SDK verifies both, server emits v1 today and v2 once Phase 4.4 ships.
+SEAL_MODE_V1 = "merkle-blake3-64k-v1"
+SEAL_MODE_V2 = "merkle-blake3-64k-v2"
+SEAL_MODE = SEAL_MODE_V1
 
 # Web API base URL. Override with BITSEAL_API_URL for staging or local dev.
 DEFAULT_API_BASE = "https://bitseal.orygn.tech"
@@ -137,6 +142,32 @@ def _build_cli_signed_message(root_hash_hex: str, fingerprint: str, timestamp: f
     return f"{root_hash_hex}|{fingerprint}|{timestamp}".encode()
 
 
+def _canonicalize_v2_manifest(manifest: Dict[str, Any]) -> bytes:
+    """Produce the canonical UTF-8 bytes for a v2 manifest, suitable for
+    SHA3-512 + Ed25519 verification. Removes the `signature` field,
+    recursively sorts every object's keys lexicographically, emits no
+    whitespace, and forbids JSON floats and NaN/Infinity. See
+    spec/v2-manifest.md §4 in the BitSeal monorepo for the full ruleset.
+    """
+    m = {k: v for k, v in manifest.items() if k != "signature"}
+    text = json.dumps(
+        m,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return text.encode("utf-8")
+
+
+def _build_v2_signed_message(manifest: Dict[str, Any]) -> bytes:
+    """Returns the 64-byte SHA3-512 digest that the v2 Ed25519 signature covers.
+
+    SignedMessage_v2 = SHA3-512(canonical_manifest_minus_signature)
+    """
+    return hashlib.sha3_512(_canonicalize_v2_manifest(manifest)).digest()
+
+
 def _is_web_signed_manifest(manifest: Dict[str, Any]) -> bool:
     signer = manifest.get("signer", "") or ""
     return (
@@ -169,6 +200,17 @@ def fetch_web_authority_public_key(url: str = WEB_AUTHORITY_KEY_URL, timeout: fl
 def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
     """Verifies a seal manifest's Ed25519 signature fully offline.
 
+    Dispatches on `manifest.seal_mode`:
+      - "merkle-blake3-64k-v2"  -> v2 path: signature covers SHA3-512 of the
+                                   canonical manifest minus signature. Closes
+                                   audit findings H2, M4, L4. See
+                                   spec/v2-manifest.md in the BitSeal monorepo.
+      - "merkle-blake3-64k-v1"  -> v1 web path: signature covers
+        (or missing/None)         32-byte root_hash || 8-byte LE double timestamp_utc.
+                                   When seal_mode is absent (legacy manifests),
+                                   the signer string still decides web vs CLI.
+      - anything else           -> rejected as an unknown spec.
+
     For web-signed manifests (signer contains "Orygn Authority" or any of the
     legacy "Cloud Authority" / "Vercel" strings), supply the Authority public
     key PEM or let this function fetch the published key if omitted.
@@ -176,21 +218,60 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
     For CLI-signed manifests (legacy pre-0.2 SDK), supply the signer's public
     key PEM. Those keys were per-machine and never published centrally.
 
-    Returns {"ok": bool, "reason": str, "format": "web"|"cli"}.
+    Returns {"ok": bool, "reason": str, "format": "web"|"cli", "seal_mode": str|None}.
+    The "format" field stays "web" for both v1 and v2 (both are Authority-signed
+    web seals); inspect "seal_mode" to distinguish the spec version.
     """
     root_hash = manifest.get("root_hash")
     timestamp = manifest.get("timestamp_utc")
     signature_hex = manifest.get("signature")
+    seal_mode = manifest.get("seal_mode")
 
     if not root_hash or timestamp is None or not signature_hex:
-        return {"ok": False, "reason": "manifest is missing required fields", "format": None}
+        return {"ok": False, "reason": "manifest is missing required fields", "format": None, "seal_mode": seal_mode}
 
     try:
         signature = bytes.fromhex(signature_hex)
     except ValueError:
-        return {"ok": False, "reason": "signature is not hex", "format": None}
+        return {"ok": False, "reason": "signature is not hex", "format": None, "seal_mode": seal_mode}
     if len(signature) != 64:
-        return {"ok": False, "reason": "Ed25519 signatures must be 64 bytes", "format": None}
+        return {"ok": False, "reason": "Ed25519 signatures must be 64 bytes", "format": None, "seal_mode": seal_mode}
+
+    # --- v2 dispatch ---
+    if seal_mode == SEAL_MODE_V2:
+        fmt = "web"
+        try:
+            message = _build_v2_signed_message(manifest)
+        except (ValueError, TypeError) as e:
+            return {"ok": False, "reason": f"v2 canonicalization failed: {e}", "format": fmt, "seal_mode": seal_mode}
+        if public_key_pem is None:
+            try:
+                doc = fetch_web_authority_public_key()
+                public_key_pem = doc.get("current_key", {}).get("public_key_pem")
+            except Exception as e:
+                return {"ok": False, "reason": f"could not fetch Authority public key: {e}", "format": fmt, "seal_mode": seal_mode}
+        if isinstance(public_key_pem, str):
+            public_key_pem = public_key_pem.encode("utf-8")
+        try:
+            pub_key = serialization.load_pem_public_key(public_key_pem)
+        except Exception as e:
+            return {"ok": False, "reason": f"invalid public key PEM: {e}", "format": fmt, "seal_mode": seal_mode}
+        if not isinstance(pub_key, ed25519.Ed25519PublicKey):
+            return {"ok": False, "reason": "public key is not Ed25519", "format": fmt, "seal_mode": seal_mode}
+        try:
+            pub_key.verify(signature, message)
+            return {"ok": True, "reason": "signature verified", "format": fmt, "seal_mode": seal_mode}
+        except Exception:
+            return {"ok": False, "reason": "signature did not verify", "format": fmt, "seal_mode": seal_mode}
+
+    # --- v1 dispatch (or legacy missing-seal_mode) ---
+    if seal_mode is not None and seal_mode != SEAL_MODE_V1:
+        return {
+            "ok": False,
+            "reason": f"unknown seal_mode '{seal_mode}'; SDK {SDK_VERSION} verifies v1 and v2 only",
+            "format": None,
+            "seal_mode": seal_mode,
+        }
 
     is_web = _is_web_signed_manifest(manifest)
     fmt = "web" if is_web else "cli"
@@ -199,13 +280,13 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
         try:
             message = _build_web_signed_message(root_hash, timestamp)
         except ValueError as e:
-            return {"ok": False, "reason": str(e), "format": fmt}
+            return {"ok": False, "reason": str(e), "format": fmt, "seal_mode": seal_mode}
         if public_key_pem is None:
             try:
                 doc = fetch_web_authority_public_key()
                 public_key_pem = doc.get("current_key", {}).get("public_key_pem")
             except Exception as e:
-                return {"ok": False, "reason": f"could not fetch Authority public key: {e}", "format": fmt}
+                return {"ok": False, "reason": f"could not fetch Authority public key: {e}", "format": fmt, "seal_mode": seal_mode}
     else:
         fingerprint = manifest.get("machine_fingerprint", "")
         message = _build_cli_signed_message(root_hash, fingerprint, timestamp)
@@ -214,6 +295,7 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
                 "ok": False,
                 "reason": "CLI-signed manifest requires the signer's published public key PEM; no default is fetched.",
                 "format": fmt,
+                "seal_mode": seal_mode,
             }
 
     if isinstance(public_key_pem, str):
@@ -222,16 +304,16 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
     try:
         pub_key = serialization.load_pem_public_key(public_key_pem)
     except Exception as e:
-        return {"ok": False, "reason": f"invalid public key PEM: {e}", "format": fmt}
+        return {"ok": False, "reason": f"invalid public key PEM: {e}", "format": fmt, "seal_mode": seal_mode}
 
     if not isinstance(pub_key, ed25519.Ed25519PublicKey):
-        return {"ok": False, "reason": "public key is not Ed25519", "format": fmt}
+        return {"ok": False, "reason": "public key is not Ed25519", "format": fmt, "seal_mode": seal_mode}
 
     try:
         pub_key.verify(signature, message)
-        return {"ok": True, "reason": "signature verified", "format": fmt}
+        return {"ok": True, "reason": "signature verified", "format": fmt, "seal_mode": seal_mode}
     except Exception:
-        return {"ok": False, "reason": "signature did not verify", "format": fmt}
+        return {"ok": False, "reason": "signature did not verify", "format": fmt, "seal_mode": seal_mode}
 
 
 # --- OpenTimestamps / Bitcoin Anchor Verification (Part 7c) ---
