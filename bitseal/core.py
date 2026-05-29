@@ -77,7 +77,7 @@ except ImportError:
     _HAS_OPENTIMESTAMPS = False
 
 # --- Configuration Constants ---
-SDK_VERSION = "0.3.0"
+SDK_VERSION = "0.3.1"
 CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 
