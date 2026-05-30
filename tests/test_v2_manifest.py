@@ -257,5 +257,80 @@ def test_seal_mode_constants_match_spec():
 
 
 def test_sdk_version_bumped():
-    """0.3.2 is the version that ships v2 verify support. Don't ship as 0.3.1."""
-    assert SDK_VERSION == "0.3.2"
+    """0.3.3 ships the historical-key-fallback fix that unblocks pre-rotation
+    seal verification after the Phase 5.1 KMS migration."""
+    assert SDK_VERSION == "0.3.3"
+
+
+# --- 0.3.3 historical-key fallback (Phase 5.1 KMS rotation regression) ---
+
+def test_historical_key_fallback_via_well_known(monkeypatch, vectors):
+    """A seal signed by a now-retired key MUST still verify after the well-
+    known doc has rotated to a new current_key, provided the retired key is
+    listed under historical_keys. Pre-0.3.3 SDKs would reject because they
+    only tried current_key.public_key_pem.
+
+    Regression for the Phase 5.1 KMS rotation: pre-KMS seals were signed
+    with the env-var key; post-rotation, the well-known doc serves the KMS
+    public key as current and the env-var key as historical. Without this
+    fix every legacy seal would suddenly report signature_verified=False.
+    """
+    # Vector A is signed with the RFC 8032 Test 1 keypair. Pretend that
+    # keypair is now retired (historical) and a *different* keypair is the
+    # current Authority key.
+    a = vectors["positive_vectors"][0]
+    retired_pub_hex = vectors["ed25519_test_keypair"]["public_key_raw_hex"]
+    retired_pub_pem = (
+        ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(retired_pub_hex))
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
+    # Mint a brand-new keypair to play "current".
+    new_current_priv = ed25519.Ed25519PrivateKey.generate()
+    new_current_pem = (
+        new_current_priv.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
+
+    fake_well_known = {
+        "current_key": {
+            "key_id": "current",
+            "public_key_pem": new_current_pem,
+        },
+        "historical_keys": [
+            {
+                "key_id": "pre-kms-2026-04-19",
+                "public_key_pem": retired_pub_pem,
+                "effective_until": "2026-05-29",
+            }
+        ],
+    }
+    import bitseal.core as core
+    monkeypatch.setattr(core, "fetch_web_authority_public_key", lambda: fake_well_known)
+
+    result = verify_manifest_signature(a["signed_manifest"])
+    assert result["ok"] is True, (
+        f"historical-key fallback failed: {result.get('reason')}"
+    )
+    assert result["key_id"] == "pre-kms-2026-04-19", result
+    assert result["seal_mode"] == SEAL_MODE_V2
+
+
+def test_no_candidate_keys_returns_clear_reason(monkeypatch, vectors):
+    """If well-known has neither current nor historical PEM, the verifier
+    should not crash — it should return a clear failure reason."""
+    fake_well_known = {"current_key": {}, "historical_keys": []}
+    import bitseal.core as core
+    monkeypatch.setattr(core, "fetch_web_authority_public_key", lambda: fake_well_known)
+
+    a = vectors["positive_vectors"][0]
+    result = verify_manifest_signature(a["signed_manifest"])
+    assert result["ok"] is False
+    assert "0 candidate" in result["reason"], result

@@ -78,7 +78,7 @@ except ImportError:
     _HAS_OPENTIMESTAMPS = False
 
 # --- Configuration Constants ---
-SDK_VERSION = "0.3.2"
+SDK_VERSION = "0.3.3"
 CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 
@@ -197,6 +197,42 @@ def fetch_web_authority_public_key(url: str = WEB_AUTHORITY_KEY_URL, timeout: fl
     return resp.json()
 
 
+def _candidate_authority_pems(doc: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Returns the ordered list of public keys a verifier should try.
+
+    Order: current_key first, then each entry in historical_keys (which is
+    how the well-known doc lists them — newest historical first). Used by
+    verify_manifest_signature when no public_key_pem is supplied by the
+    caller, so seals signed by a now-retired key still verify after a key
+    rotation (Phase 5.1 KMS migration).
+
+    Returns a list of dicts with shape {"key_id": str, "public_key_pem": bytes}.
+    Skips entries that lack public_key_pem. Network is performed lazily —
+    pass `doc` if you already fetched it.
+    """
+    if doc is None:
+        doc = fetch_web_authority_public_key()
+    out: List[Dict[str, Any]] = []
+    current = (doc.get("current_key") or {})
+    if current.get("public_key_pem"):
+        pem = current["public_key_pem"]
+        out.append({
+            "key_id": current.get("key_id") or "current",
+            "public_key_pem": pem.encode("utf-8") if isinstance(pem, str) else pem,
+        })
+    for hist in (doc.get("historical_keys") or []):
+        if not isinstance(hist, dict):
+            continue
+        pem = hist.get("public_key_pem")
+        if not pem:
+            continue
+        out.append({
+            "key_id": hist.get("key_id") or "historical",
+            "public_key_pem": pem.encode("utf-8") if isinstance(pem, str) else pem,
+        })
+    return out
+
+
 def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional[Union[str, bytes]] = None) -> Dict[str, Any]:
     """Verifies a seal manifest's Ed25519 signature fully offline.
 
@@ -237,6 +273,17 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
     if len(signature) != 64:
         return {"ok": False, "reason": "Ed25519 signatures must be 64 bytes", "format": None, "seal_mode": seal_mode}
 
+    # Build candidate PEM list. Callers can pin a specific key by passing
+    # public_key_pem; otherwise we fetch the well-known doc and try the
+    # current key first, then each historical key. The historical iteration
+    # is what makes pre-rotation seals continue to verify after a KMS key
+    # rotation (Phase 5.1 fix; pre-0.3.3 SDKs would have rejected here).
+    candidates: List[Dict[str, Any]] = []
+    if public_key_pem is not None:
+        if isinstance(public_key_pem, str):
+            public_key_pem = public_key_pem.encode("utf-8")
+        candidates.append({"key_id": "caller-supplied", "public_key_pem": public_key_pem})
+
     # --- v2 dispatch ---
     if seal_mode == SEAL_MODE_V2:
         fmt = "web"
@@ -244,25 +291,12 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
             message = _build_v2_signed_message(manifest)
         except (ValueError, TypeError) as e:
             return {"ok": False, "reason": f"v2 canonicalization failed: {e}", "format": fmt, "seal_mode": seal_mode}
-        if public_key_pem is None:
+        if not candidates:
             try:
-                doc = fetch_web_authority_public_key()
-                public_key_pem = doc.get("current_key", {}).get("public_key_pem")
+                candidates = _candidate_authority_pems()
             except Exception as e:
                 return {"ok": False, "reason": f"could not fetch Authority public key: {e}", "format": fmt, "seal_mode": seal_mode}
-        if isinstance(public_key_pem, str):
-            public_key_pem = public_key_pem.encode("utf-8")
-        try:
-            pub_key = serialization.load_pem_public_key(public_key_pem)
-        except Exception as e:
-            return {"ok": False, "reason": f"invalid public key PEM: {e}", "format": fmt, "seal_mode": seal_mode}
-        if not isinstance(pub_key, ed25519.Ed25519PublicKey):
-            return {"ok": False, "reason": "public key is not Ed25519", "format": fmt, "seal_mode": seal_mode}
-        try:
-            pub_key.verify(signature, message)
-            return {"ok": True, "reason": "signature verified", "format": fmt, "seal_mode": seal_mode}
-        except Exception:
-            return {"ok": False, "reason": "signature did not verify", "format": fmt, "seal_mode": seal_mode}
+        return _ed25519_verify_against_candidates(signature, message, candidates, fmt, seal_mode)
 
     # --- v1 dispatch (or legacy missing-seal_mode) ---
     if seal_mode is not None and seal_mode != SEAL_MODE_V1:
@@ -281,16 +315,15 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
             message = _build_web_signed_message(root_hash, timestamp)
         except ValueError as e:
             return {"ok": False, "reason": str(e), "format": fmt, "seal_mode": seal_mode}
-        if public_key_pem is None:
+        if not candidates:
             try:
-                doc = fetch_web_authority_public_key()
-                public_key_pem = doc.get("current_key", {}).get("public_key_pem")
+                candidates = _candidate_authority_pems()
             except Exception as e:
                 return {"ok": False, "reason": f"could not fetch Authority public key: {e}", "format": fmt, "seal_mode": seal_mode}
     else:
         fingerprint = manifest.get("machine_fingerprint", "")
         message = _build_cli_signed_message(root_hash, fingerprint, timestamp)
-        if public_key_pem is None:
+        if not candidates:
             return {
                 "ok": False,
                 "reason": "CLI-signed manifest requires the signer's published public key PEM; no default is fetched.",
@@ -298,22 +331,48 @@ def verify_manifest_signature(manifest: Dict[str, Any], public_key_pem: Optional
                 "seal_mode": seal_mode,
             }
 
-    if isinstance(public_key_pem, str):
-        public_key_pem = public_key_pem.encode("utf-8")
+    return _ed25519_verify_against_candidates(signature, message, candidates, fmt, seal_mode)
 
-    try:
-        pub_key = serialization.load_pem_public_key(public_key_pem)
-    except Exception as e:
-        return {"ok": False, "reason": f"invalid public key PEM: {e}", "format": fmt, "seal_mode": seal_mode}
 
-    if not isinstance(pub_key, ed25519.Ed25519PublicKey):
-        return {"ok": False, "reason": "public key is not Ed25519", "format": fmt, "seal_mode": seal_mode}
-
-    try:
-        pub_key.verify(signature, message)
-        return {"ok": True, "reason": "signature verified", "format": fmt, "seal_mode": seal_mode}
-    except Exception:
-        return {"ok": False, "reason": "signature did not verify", "format": fmt, "seal_mode": seal_mode}
+def _ed25519_verify_against_candidates(
+    signature: bytes,
+    message: bytes,
+    candidates: List[Dict[str, Any]],
+    fmt: str,
+    seal_mode: Optional[str],
+) -> Dict[str, Any]:
+    """Try Ed25519 verify against each candidate PEM in order. Returns the
+    standard verify_manifest_signature result dict. On success, key_id is
+    included so callers can see which historical (or current) key matched."""
+    last_reason = "no candidate keys available"
+    for cand in candidates:
+        pem_bytes = cand["public_key_pem"]
+        try:
+            pub_key = serialization.load_pem_public_key(pem_bytes)
+        except Exception as e:
+            last_reason = f"invalid public key PEM ({cand.get('key_id')}): {e}"
+            continue
+        if not isinstance(pub_key, ed25519.Ed25519PublicKey):
+            last_reason = f"public key {cand.get('key_id')} is not Ed25519"
+            continue
+        try:
+            pub_key.verify(signature, message)
+            return {
+                "ok": True,
+                "reason": "signature verified",
+                "format": fmt,
+                "seal_mode": seal_mode,
+                "key_id": cand.get("key_id"),
+            }
+        except Exception:
+            last_reason = "signature did not verify"
+            continue
+    return {
+        "ok": False,
+        "reason": f"signature did not verify against any of {len(candidates)} candidate key(s) ({last_reason})",
+        "format": fmt,
+        "seal_mode": seal_mode,
+    }
 
 
 # --- OpenTimestamps / Bitcoin Anchor Verification (Part 7c) ---
