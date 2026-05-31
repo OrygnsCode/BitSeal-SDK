@@ -1,8 +1,8 @@
-blake3
-cryptography
-filetype
-numpy
-opentimestamps
-pillow
-requests
-rich
+blake3>=1.0
+cryptography>=42
+filetype>=1.0
+numpy>=1.24
+opentimestamps>=0.4
+pillow>=10
+requests>=2.31
+rich>=13

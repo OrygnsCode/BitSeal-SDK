@@ -49,14 +49,18 @@ classifiers = [
     "Topic :: System :: Archiving",
 ]
 dependencies = [
-    "blake3",
-    "cryptography",
-    "filetype",
-    "numpy",
-    "opentimestamps",
-    "pillow",
-    "requests",
-    "rich",
+    # F-2-MED-3 fix: lower-bound version floors block typosquat / downgrade
+    # attacks where a malicious upstream version with a low number is published.
+    # No upper bounds — security patches in these libraries should flow through
+    # to every `pip install bitseal` user without a manual bump here.
+    "blake3>=1.0",
+    "cryptography>=42",
+    "filetype>=1.0",
+    "numpy>=1.24",
+    "opentimestamps>=0.4",
+    "pillow>=10",
+    "requests>=2.31",
+    "rich>=13",
 ]
 
 [project.urls]
