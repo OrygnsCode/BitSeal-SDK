@@ -48,6 +48,19 @@ _BITSEAL_PUBLIC_NAMES = [
     "fetch_web_authority_public_key",
     "verify_bitcoin_anchor",
     "verify_manifest_signature",
+    # G-6 Merkle log surface added in v0.3.4. Implementations live in
+    # bitseal/log_sth.py and are re-exported through bitseal/core.py so
+    # the BitSealCore.X is bitseal.core.X invariant below holds.
+    "GENESIS_PREV_MERKLE_ROOT",
+    "STH_MODE_V1",
+    "canonical_leaf_bytes",
+    "leaf_hash_hex",
+    "compute_merkle_root_from_leaves",
+    "canonical_sth_bytes",
+    "build_signed_sth_message",
+    "verify_inclusion",
+    "verify_sth_signature",
+    "verify_seal_in_log",
 ]
 
 

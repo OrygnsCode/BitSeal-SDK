@@ -1,0 +1,129 @@
+{
+  "spec_version": "sth-v1",
+  "spec_path": "spec/log-sth.md",
+  "generated_by": "spec/generate-log-sth-vectors.mjs",
+  "ed25519_test_keypair": {
+    "source": "RFC 8032 §7.1 Test 1",
+    "private_key_raw_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "public_key_raw_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+  },
+  "vectors": {
+    "A": {
+      "name": "A",
+      "description": "Single seal, single leaf (root == leaf). Exercises canonical-leaf-byte serialization and the 1-leaf Merkle case.",
+      "input_seal": {
+        "seal_id": "vec_a_seal",
+        "seal_index": 0,
+        "signature": "aa00000000000000000000000000000000000000000000000000000000000000bb00000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_leaf_bytes_utf8": "{\"seal_id\":\"vec_a_seal\",\"seal_index\":0,\"signature\":\"aa00000000000000000000000000000000000000000000000000000000000000bb00000000000000000000000000000000000000000000000000000000000000\"}",
+      "canonical_leaf_bytes_hex": "7b227365616c5f6964223a227665635f615f7365616c222c227365616c5f696e646578223a302c227369676e6174757265223a226161303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303062623030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030227d",
+      "canonical_leaf_bytes_length": 182,
+      "leaf_hash_hex": "20ae9551b8c104fffef163b044a36f7c95708a262ad5f52e6af3223b8b64e847",
+      "merkle_root_hex": "20ae9551b8c104fffef163b044a36f7c95708a262ad5f52e6af3223b8b64e847"
+    },
+    "B": {
+      "name": "B",
+      "description": "Three seals, exercises odd-layer-duplicate (leaf_2 paired with itself at level 1).",
+      "input_seals": [
+        {
+          "seal_id": "vec_b_seal_0",
+          "seal_index": 0,
+          "signature": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "seal_id": "vec_b_seal_1",
+          "seal_index": 1,
+          "signature": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        {
+          "seal_id": "vec_b_seal_2",
+          "seal_index": 2,
+          "signature": "cececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececece"
+        }
+      ],
+      "leaf_hashes_hex": [
+        "7bf75053d134109984190f0f5ad8f5dab7a06d50e3598d4cea82f9f722ee7938",
+        "095493e3f87e937d6207c1d818568cb21c3c14337b32a221f277100ef45593c6",
+        "48445a706c472b1ec8c6a7fe6f5f7f364881319498db47d76457cd29f550e738"
+      ],
+      "merkle_root_hex": "8b23fc9f16b8b72b0e4fcaedb304bb8379df3cad1227e662c411379f2ec782ae"
+    },
+    "C": {
+      "name": "C",
+      "description": "Inclusion proof for seal_index=2 of a five-seal tree. Exercises the proof shape across multiple layers including the odd-tail self-pair edge.",
+      "input_seals": [
+        {
+          "seal_id": "vec_c_seal_0",
+          "seal_index": 0,
+          "signature": "77777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777"
+        },
+        {
+          "seal_id": "vec_c_seal_1",
+          "seal_index": 1,
+          "signature": "78787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878"
+        },
+        {
+          "seal_id": "vec_c_seal_2",
+          "seal_index": 2,
+          "signature": "79797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979797979"
+        },
+        {
+          "seal_id": "vec_c_seal_3",
+          "seal_index": 3,
+          "signature": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        },
+        {
+          "seal_id": "vec_c_seal_4",
+          "seal_index": 4,
+          "signature": "7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b"
+        }
+      ],
+      "leaf_hashes_hex": [
+        "c481b4afc16234931080b87a431d3c6824c891e4abe04bf924d96a5dfae8df08",
+        "985d25a3f03e8ec435dc0190fcca47c1fe7f45e25829588c5fb1dbffbf7c341f",
+        "0ac2b2364d138bde685a7f4ee655d4c4c13862c719a7b391f0d19e49ce1ee7aa",
+        "68c57497e7e219bc195458df9d0d83f4226455a7334eb6c615252c0b81b82d97",
+        "6bd1a68a149115cabee6cb40a80ab9f63496a4b238ead0eb1368e465b79c192c"
+      ],
+      "merkle_root_hex": "efb775046cc97e0342e04046069a8bcafb0abd659bb1dfdaee1ba598bcd790e1",
+      "inclusion_proof_for_seal_index_2": {
+        "leaf_index": 2,
+        "leaf_hash": "0ac2b2364d138bde685a7f4ee655d4c4c13862c719a7b391f0d19e49ce1ee7aa",
+        "merkle_root": "efb775046cc97e0342e04046069a8bcafb0abd659bb1dfdaee1ba598bcd790e1",
+        "proof": [
+          {
+            "sibling_hash": "68c57497e7e219bc195458df9d0d83f4226455a7334eb6c615252c0b81b82d97",
+            "position": "right"
+          },
+          {
+            "sibling_hash": "40029e4182461963f557dd3f0de5fad8f63e120c7ab26b4abdc233b6cb5efe5c",
+            "position": "left"
+          },
+          {
+            "sibling_hash": "111d0633fbc53d41b7d5378b839db059036fdad4248aca00501dee92d39b1c8f",
+            "position": "right"
+          }
+        ]
+      }
+    },
+    "D": {
+      "name": "D",
+      "description": "Full STH signing round-trip: canonical bytes -> SHA3-512 -> Ed25519 sign with RFC 8032 §7.1 Test 1 keypair. Uses Vector B leaves.",
+      "input_sth": {
+        "sth_index": 0,
+        "anchor_at_utc": "2026-06-03T11:23:36.542Z",
+        "seal_count": 3,
+        "merkle_root": "8b23fc9f16b8b72b0e4fcaedb304bb8379df3cad1227e662c411379f2ec782ae",
+        "prev_sth_merkle_root": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "canonical_sth_bytes_utf8": "BITSEAL_STH_V1\nanchor_at_utc: 2026-06-03T11:23:36.542Z\nmerkle_root: 8b23fc9f16b8b72b0e4fcaedb304bb8379df3cad1227e662c411379f2ec782ae\nprev_sth_merkle_root: 0000000000000000000000000000000000000000000000000000000000000000\nseal_count: 3\nsth_index: 0\n",
+      "canonical_sth_bytes_hex": "4249545345414c5f5354485f56310a616e63686f725f61745f7574633a20323032362d30362d30335431313a32333a33362e3534325a0a6d65726b6c655f726f6f743a20386232336663396631366238623732623065346663616564623330346262383337396466336361643132323765363632633431313337396632656337383261650a707265765f7374685f6d65726b6c655f726f6f743a20303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030300a7365616c5f636f756e743a20330a7374685f696e6465783a20300a",
+      "canonical_sth_bytes_length": 247,
+      "sha3_512_digest_hex": "02ab5ba600be7ffe99942066c8e9d1d7208941875f296858ba6abb33def8daf250643b50582b3aa891e9f536244cec74119cb1830159f7f61843c62238d778d6",
+      "ed25519_signature_hex": "132f5f0aaa75e9f1c5ec242c783c8626c17dcb7dce01fcaf321900bcd698f22f1f9ff25d5f2b789c65b42b504022613fa5b9a567f4df97fde3479e80c487060d",
+      "verified_locally_against_public_key": true,
+      "seal_mode": "sth-v1"
+    }
+  }
+}

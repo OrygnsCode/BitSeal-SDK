@@ -257,9 +257,12 @@ def test_seal_mode_constants_match_spec():
 
 
 def test_sdk_version_bumped():
-    """0.3.3 ships the historical-key-fallback fix that unblocks pre-rotation
+    """0.3.4 ships the G-6 Merkle log surface (canonical leaf bytes, STH
+    canonical bytes + signing, inclusion-proof verifier, STH signature
+    verifier, end-to-end verify_seal_in_log orchestrator). Layered on top
+    of the 0.3.3 historical-key-fallback fix that unblocks pre-rotation
     seal verification after the Phase 5.1 KMS migration."""
-    assert SDK_VERSION == "0.3.3"
+    assert SDK_VERSION == "0.3.4"
 
 
 # --- 0.3.3 historical-key fallback (Phase 5.1 KMS rotation regression) ---

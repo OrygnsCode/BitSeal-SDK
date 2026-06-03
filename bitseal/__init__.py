@@ -38,6 +38,18 @@ from bitseal.core import (
     verify_bitcoin_anchor,
     verify_manifest_signature,
 )
+from bitseal.log_sth import (
+    GENESIS_PREV_MERKLE_ROOT,
+    STH_MODE_V1,
+    canonical_leaf_bytes,
+    leaf_hash_hex,
+    compute_merkle_root_from_leaves,
+    canonical_sth_bytes,
+    build_signed_sth_message,
+    verify_inclusion,
+    verify_sth_signature,
+    verify_seal_in_log,
+)
 
 __version__ = SDK_VERSION
 
@@ -58,4 +70,15 @@ __all__ = [
     "fetch_web_authority_public_key",
     "verify_bitcoin_anchor",
     "verify_manifest_signature",
+    # G-6 Merkle log surface (v0.3.4)
+    "GENESIS_PREV_MERKLE_ROOT",
+    "STH_MODE_V1",
+    "canonical_leaf_bytes",
+    "leaf_hash_hex",
+    "compute_merkle_root_from_leaves",
+    "canonical_sth_bytes",
+    "build_signed_sth_message",
+    "verify_inclusion",
+    "verify_sth_signature",
+    "verify_seal_in_log",
 ]

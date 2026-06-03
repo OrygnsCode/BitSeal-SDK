@@ -52,6 +52,25 @@ except ImportError as e:
     print(f"Network library missing: {e}. Run pip install requests")
     sys.exit(1)
 
+# 4. G-6 Merkle log surface. Implementation lives in bitseal/log_sth.py to
+# keep this file focused; re-exported here so the BitSealCore back-compat
+# shim and the bitseal.core package public surface stay symmetric. The
+# test_package_layout.py invariant `BitSealCore.X is bitseal.core.X` is
+# preserved because both paths land at the same bitseal.log_sth function
+# object.
+from bitseal.log_sth import (  # noqa: E402, F401
+    GENESIS_PREV_MERKLE_ROOT,
+    STH_MODE_V1,
+    canonical_leaf_bytes,
+    leaf_hash_hex,
+    compute_merkle_root_from_leaves,
+    canonical_sth_bytes,
+    build_signed_sth_message,
+    verify_inclusion,
+    verify_sth_signature,
+    verify_seal_in_log,
+)
+
 console = Console()
 
 # 4. Forensic Libs (individually guarded).
@@ -83,7 +102,7 @@ except ImportError:
     _HAS_OPENTIMESTAMPS = False
 
 # --- Configuration Constants ---
-SDK_VERSION = "0.3.3"
+SDK_VERSION = "0.3.4"
 CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 
