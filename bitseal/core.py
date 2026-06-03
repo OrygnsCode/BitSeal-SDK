@@ -11,12 +11,17 @@ import sys
 import site
 import platform
 
-# Force add user site-packages
+# Force add user site-packages. Some Python installs (Windows installers
+# without admin, sandboxed pip envs) leave the user-site directory off
+# sys.path on import; explicitly appending it keeps `pip install --user
+# bitseal` working without an extra activate step. Narrow the catch so
+# KeyboardInterrupt and SystemExit still propagate (PEP 8: never use
+# bare except).
 try:
     user_site = site.getusersitepackages()
     if user_site not in sys.path:
         sys.path.append(user_site)
-except:
+except Exception:
     pass
 
 from typing import List, Dict, Any, Optional, Tuple, Union
@@ -818,7 +823,7 @@ async def process_seal(filepath: str, output_dir: Optional[str] = None, progress
 # --- COMMANDS ---
 
 async def cmd_seal(filepath: str):
-    from _cli_ui import header_panel, kv_table, render_panel, short_hex
+    from bitseal._cli_ui import header_panel, kv_table, render_panel, short_hex
 
     console.print(header_panel(SDK_VERSION, API_BASE))
 
@@ -873,7 +878,7 @@ async def cmd_seal(filepath: str):
 
 
 def main():
-    from _cli_ui import header_panel, kv_table, render_panel
+    from bitseal._cli_ui import header_panel, kv_table, render_panel
 
     if len(sys.argv) < 2:
         console.print(header_panel(SDK_VERSION, API_BASE))
