@@ -102,7 +102,7 @@ except ImportError:
     _HAS_OPENTIMESTAMPS = False
 
 # --- Configuration Constants ---
-SDK_VERSION = "0.3.4"
+SDK_VERSION = "0.3.5"
 CHUNK_SIZE = 64 * 1024        # 64KB Merkle leaves (unified spec v1)
 BUFFER_SIZE = 2 * 1024 * 1024 # 2MB I/O Buffer (multiple of CHUNK_SIZE)
 
@@ -728,10 +728,84 @@ class BitSealLedger:
             "ots": payload.get("ots"),
         }
 
+    def _fetch_pow_challenge(self) -> Dict[str, Any]:
+        """GET /api/challenge. Returns the challenge dict with
+        challenge_id, challenge, difficulty, expires_at."""
+        try:
+            resp = self.session.get(
+                f"{self.api_base}/api/challenge",
+                timeout=self.timeout,
+            )
+        except requests.RequestException as e:
+            raise RuntimeError(f"Network error fetching PoW challenge from {self.api_base}: {e}") from e
+        if resp.status_code != 200:
+            raise RuntimeError(self._format_http_error(resp))
+        try:
+            return resp.json()
+        except Exception as e:
+            raise RuntimeError(f"Could not parse challenge response: {e}") from e
+
+    @staticmethod
+    def _solve_pow(challenge: str, difficulty: int) -> int:
+        """Find an integer `nonce` such that
+        SHA-256(challenge_hex || str(nonce)) has at least `difficulty`
+        leading zero bits. At difficulty=18, median work is ~250 ms on a
+        modern laptop. At difficulty=20, ~1 s. Returns the nonce.
+
+        Pure Python so it works inside any environment that runs the SDK.
+        For SDK callers wanting faster solve times, swap in a C-extension
+        SHA-256 (hashlib already uses OpenSSL when available)."""
+        if not isinstance(difficulty, int) or difficulty < 1 or difficulty > 32:
+            raise ValueError(f"PoW difficulty must be in [1, 32], got {difficulty}")
+        full_bytes = difficulty // 8
+        rem_bits = difficulty % 8
+        mask = (0xff << (8 - rem_bits)) & 0xff if rem_bits else 0
+        challenge_b = challenge.encode("utf-8")
+        nonce = 0
+        while True:
+            digest = hashlib.sha256(challenge_b + str(nonce).encode("utf-8")).digest()
+            ok = True
+            for i in range(full_bytes):
+                if digest[i] != 0:
+                    ok = False
+                    break
+            if ok and rem_bits and (digest[full_bytes] & mask) != 0:
+                ok = False
+            if ok:
+                return nonce
+            nonce += 1
+
     def submit_seal(self, manifest: SealManifest) -> Dict[str, Any]:
         """POST a manifest to /api/seal. The server signs, persists, and returns
-        a base64-encoded PDF. Raises RuntimeError on any non-2xx response."""
+        a base64-encoded PDF. Raises RuntimeError on any non-2xx response.
+
+        v0.3.5+ flow: fetch a Proof of Work challenge from /api/challenge,
+        solve the SHA-256 leading-zero-bits puzzle, then submit the proof
+        alongside the manifest. This imposes per-call CPU cost on every
+        seal (legitimate users barely notice ~250 ms; mass abuse becomes
+        expensive). The server-side requirement is hard: a manifest
+        submitted without a valid pow_token is rejected with HTTP 400.
+
+        SDKs pinned to bitseal<=0.3.4 will fail against the current server
+        because they do not include the pow_token. Upgrade with
+        `pip install --upgrade bitseal` to 0.3.5 or newer."""
         body = asdict(manifest)
+
+        # PoW: fetch challenge, solve, attach.
+        challenge_payload = self._fetch_pow_challenge()
+        challenge_id = challenge_payload.get("challenge_id")
+        challenge = challenge_payload.get("challenge")
+        difficulty = challenge_payload.get("difficulty")
+        if not (isinstance(challenge_id, str) and isinstance(challenge, str) and isinstance(difficulty, int)):
+            raise RuntimeError(
+                f"Malformed PoW challenge response: {challenge_payload}"
+            )
+        nonce = self._solve_pow(challenge, difficulty)
+        body["pow_token"] = {
+            "challenge_id": challenge_id,
+            "nonce": str(nonce),
+        }
+
         try:
             resp = self.session.post(
                 f"{self.api_base}/api/seal",

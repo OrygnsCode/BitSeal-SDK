@@ -262,7 +262,7 @@ def test_sdk_version_bumped():
     verifier, end-to-end verify_seal_in_log orchestrator). Layered on top
     of the 0.3.3 historical-key-fallback fix that unblocks pre-rotation
     seal verification after the Phase 5.1 KMS migration."""
-    assert SDK_VERSION == "0.3.4"
+    assert SDK_VERSION == "0.3.5"
 
 
 # --- 0.3.3 historical-key fallback (Phase 5.1 KMS rotation regression) ---
