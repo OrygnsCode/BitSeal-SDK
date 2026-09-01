@@ -16,6 +16,12 @@ on:
     # 12:00 UTC every Monday. The minute (0) is staggered slightly off
     # the top of the hour to spread load across the GitHub fleet.
     - cron: "0 12 * * 1"
+  # Manual trigger. Added 2026-08-31: this workflow was auto-disabled after
+  # 60 days of repo inactivity and there was no way to run it by hand to
+  # confirm it worked again. Note the 60-day clock keys on REPOSITORY
+  # activity, not workflow state, so re-enabling alone does not reset it;
+  # only a commit does.
+  workflow_dispatch:
 
 jobs:
   analyze:
